@@ -183,8 +183,25 @@ class Mu2eViewer(QMainWindow):
         self._receiver = _Receiver()
         self._receiver.data_received.connect(self._on_socket_data)
 
+        self._font_size = 11
         self._build_ui()
         self._refresh_format_list()
+
+    # ------------------------------------------------------------------
+    # Font helpers
+    # ------------------------------------------------------------------
+
+    def _f(self, delta: int = 0, bold: bool = False) -> QFont:
+        """Return a Courier font at the current size plus *delta*."""
+        f = QFont("Courier", self._font_size + delta)
+        if bold:
+            f.setBold(True)
+        return f
+
+    def _on_font_size_changed(self):
+        self._font_size_label.setText(str(self._font_size))
+        QApplication.instance().setFont(self._f())
+        self._refresh_display()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -202,7 +219,7 @@ class Mu2eViewer(QMainWindow):
         # Format selector
         bar.addWidget(QLabel("  Packet format: "))
         self.format_combo = QComboBox()
-        self.format_combo.setFont(QFont("Courier", 11))
+        self.format_combo.setFont(self._f())
         self.format_combo.setMinimumWidth(300)
         self.format_combo.currentIndexChanged.connect(lambda _: self._refresh_display())
         bar.addWidget(self.format_combo)
@@ -215,7 +232,7 @@ class Mu2eViewer(QMainWindow):
         for label, val in (("Hex", "hex"), ("Binary", "bin"), ("Decimal", "dec")):
             rb = QRadioButton(label)
             rb.setProperty("mode_value", val)
-            rb.setFont(QFont("Courier", 11))
+            rb.setFont(self._f())
             if val == "hex":
                 rb.setChecked(True)
             self._display_mode_group.addButton(rb)
@@ -225,24 +242,24 @@ class Mu2eViewer(QMainWindow):
         bar.addSeparator()
 
         self._le_check = QCheckBox("Little-endian words")
-        self._le_check.setFont(QFont("Courier", 11))
+        self._le_check.setFont(self._f())
         self._le_check.stateChanged.connect(lambda _: self._on_le_changed())
         bar.addWidget(self._le_check)
 
         bar.addSeparator()
 
         btn_load = QPushButton("Load file\u2026")
-        btn_load.setFont(QFont("Courier", 11))
+        btn_load.setFont(self._f())
         btn_load.clicked.connect(self._load_file)
         bar.addWidget(btn_load)
 
         btn_auto = QPushButton("Auto-detect type")
-        btn_auto.setFont(QFont("Courier", 11))
+        btn_auto.setFont(self._f())
         btn_auto.clicked.connect(self._auto_detect)
         bar.addWidget(btn_auto)
 
         btn_clear = QPushButton("Clear")
-        btn_clear.setFont(QFont("Courier", 11))
+        btn_clear.setFont(self._f())
         btn_clear.clicked.connect(self._clear)
         bar.addWidget(btn_clear)
 
@@ -251,7 +268,7 @@ class Mu2eViewer(QMainWindow):
         # Decode offset
         bar.addWidget(QLabel("  Offset (bytes): "))
         self._offset_spin = QSpinBox()
-        self._offset_spin.setFont(QFont("Courier", 11))
+        self._offset_spin.setFont(self._f())
         self._offset_spin.setRange(0, 65535)
         self._offset_spin.setValue(0)
         self._offset_spin.valueChanged.connect(lambda _: self._refresh_display())
@@ -262,21 +279,42 @@ class Mu2eViewer(QMainWindow):
         # Socket listener
         bar.addWidget(QLabel("  TCP port: "))
         self._port_edit = QLineEdit("7755")
-        self._port_edit.setFont(QFont("Courier", 11))
+        self._port_edit.setFont(self._f())
         self._port_edit.setFixedWidth(60)
         bar.addWidget(self._port_edit)
 
         self._listen_btn = QPushButton("Start listening")
-        self._listen_btn.setFont(QFont("Courier", 11))
+        self._listen_btn.setFont(self._f())
         self._listen_btn.clicked.connect(self._toggle_server)
         bar.addWidget(self._listen_btn)
 
         bar.addSeparator()
 
         self._status_label = QLabel("No data")
-        self._status_label.setFont(QFont("Courier", 11))
+        self._status_label.setFont(self._f())
         self._status_label.setStyleSheet("color: gray;")
         bar.addWidget(self._status_label)
+
+        bar.addSeparator()
+
+        bar.addWidget(QLabel("  Font: "))
+
+        btn_font_minus = QPushButton("A-")
+        btn_font_minus.clicked.connect(lambda: (
+            setattr(self, '_font_size', max(7, self._font_size - 1)),
+            self._on_font_size_changed(),
+        ))
+        bar.addWidget(btn_font_minus)
+
+        self._font_size_label = QLabel(str(self._font_size))
+        bar.addWidget(self._font_size_label)
+
+        btn_font_plus = QPushButton("A+")
+        btn_font_plus.clicked.connect(lambda: (
+            setattr(self, '_font_size', min(24, self._font_size + 1)),
+            self._on_font_size_changed(),
+        ))
+        bar.addWidget(btn_font_plus)
 
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -284,12 +322,12 @@ class Mu2eViewer(QMainWindow):
 
         # ── Raw hex input ──────────────────────────────────────────────
         input_group = QGroupBox("Raw bytes  (hex input)")
-        input_group.setFont(QFont("Courier", 11))
+        input_group.setFont(self._f())
         input_layout = QVBoxLayout(input_group)
         input_layout.setContentsMargins(4, 4, 4, 4)
 
         self.hex_input = QPlainTextEdit()
-        self.hex_input.setFont(QFont("Courier", 11))
+        self.hex_input.setFont(self._f())
         self.hex_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.hex_input.textChanged.connect(self._refresh_display)
         self.hex_input.mousePressEvent = self._on_hex_mouse_press
@@ -298,7 +336,7 @@ class Mu2eViewer(QMainWindow):
         hint = QLabel(
             "Enter hex bytes separated by spaces (e.g.  10 00 80 50  or  0x10 0x00 \u2026)"
         )
-        hint.setFont(QFont("Courier", 10))
+        hint.setFont(self._f(-1))
         hint.setStyleSheet("color: gray;")
         input_layout.addWidget(hint)
 
@@ -306,12 +344,12 @@ class Mu2eViewer(QMainWindow):
 
         # ── Field breakdown tree ───────────────────────────────────────
         breakdown_group = QGroupBox("Field breakdown")
-        breakdown_group.setFont(QFont("Courier", 11))
+        breakdown_group.setFont(self._f())
         breakdown_layout = QVBoxLayout(breakdown_group)
         breakdown_layout.setContentsMargins(4, 4, 4, 4)
 
         self.tree = QTreeWidget()
-        self.tree.setFont(QFont("Courier", 10))
+        self.tree.setFont(self._f(-1))
         self.tree.setColumnCount(7)
         self.tree.setHeaderLabels(
             ["Field Name", "Word", "Bits", "Hex", "Binary", "Dec", "Decoded / Description"]
@@ -319,7 +357,7 @@ class Mu2eViewer(QMainWindow):
 
         # Right-align all column headers
         header = self.tree.header()
-        header.setFont(QFont("Courier", 10))
+        header.setFont(self._f(-1))
         header.setDefaultAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
@@ -336,12 +374,12 @@ class Mu2eViewer(QMainWindow):
 
         # ── Detail panel ───────────────────────────────────────────────
         detail_group = QGroupBox("Field detail")
-        detail_group.setFont(QFont("Courier", 11))
+        detail_group.setFont(self._f())
         detail_layout = QVBoxLayout(detail_group)
         detail_layout.setContentsMargins(4, 4, 4, 4)
 
         self.detail_text = QTextEdit()
-        self.detail_text.setFont(QFont("Courier", 10))
+        self.detail_text.setFont(self._f(-1))
         self.detail_text.setReadOnly(True)
         self.detail_text.setStyleSheet("background-color: #f8f8f8;")
         detail_layout.addWidget(self.detail_text)
@@ -512,9 +550,8 @@ class Mu2eViewer(QMainWindow):
         brush_grey_fg = QBrush(QColor("#888888"))
 
         align_right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        bold_font   = QFont("Courier", 10)
-        bold_font.setBold(True)
-        normal_font = QFont("Courier", 10)
+        bold_font   = self._f(-1, bold=True)
+        normal_font = self._f(-1)
 
         for section_label, fields in sections:
             if section_label:

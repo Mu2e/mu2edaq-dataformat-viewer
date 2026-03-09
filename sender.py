@@ -251,11 +251,29 @@ class Mu2eSender(QMainWindow):
         self._field_rows: list[FieldRow] = []
         self._current_fmt: dict = {}
 
-        self._mono_font = QFont("Courier", 11)
-        self._mono_sm_font = QFont("Courier", 10)
+        self._font_size = 11
 
         self._build_ui()
         self._load_format()
+
+    # ------------------------------------------------------------------
+    # Font helpers
+    # ------------------------------------------------------------------
+
+    def _f(self, delta: int = 0, bold: bool = False) -> QFont:
+        """Return a Courier font at the current size plus *delta*."""
+        f = QFont("Courier", self._font_size + delta)
+        if bold:
+            f.setBold(True)
+        return f
+
+    @property
+    def _mono_font(self) -> QFont:
+        return self._f()
+
+    @property
+    def _mono_sm_font(self) -> QFont:
+        return self._f(-1)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -323,6 +341,32 @@ class Mu2eSender(QMainWindow):
         self._status_label.setStyleSheet("color: gray;")
         bar.addWidget(self._status_label)
 
+        bar.addSeparator()
+
+        bar.addWidget(QLabel("  Font: "))
+
+        btn_font_dec = QPushButton("A-")
+        btn_font_dec.setFont(self._mono_font)
+        def _dec_font():
+            if self._font_size > 7:
+                self._font_size -= 1
+            self._on_font_size_changed()
+        btn_font_dec.clicked.connect(_dec_font)
+        bar.addWidget(btn_font_dec)
+
+        self._font_size_label = QLabel(str(self._font_size))
+        self._font_size_label.setFont(self._mono_font)
+        bar.addWidget(self._font_size_label)
+
+        btn_font_inc = QPushButton("A+")
+        btn_font_inc.setFont(self._mono_font)
+        def _inc_font():
+            if self._font_size < 24:
+                self._font_size += 1
+            self._on_font_size_changed()
+        btn_font_inc.clicked.connect(_inc_font)
+        bar.addWidget(btn_font_inc)
+
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Vertical)
         self.setCentralWidget(splitter)
@@ -359,7 +403,7 @@ class Mu2eSender(QMainWindow):
         bytes_layout.setContentsMargins(4, 4, 4, 4)
 
         self.bytes_text = QTextEdit()
-        self.bytes_text.setFont(QFont("Courier", 11))
+        self.bytes_text.setFont(self._f())
         self.bytes_text.setReadOnly(True)
         self.bytes_text.setStyleSheet("background-color: #f8f8f8;")
         bytes_layout.addWidget(self.bytes_text)
@@ -376,6 +420,15 @@ class Mu2eSender(QMainWindow):
     def _on_le_changed(self):
         self._little_endian = self._le_check.isChecked()
         self._assemble()
+
+    # ------------------------------------------------------------------
+    # Font size change
+    # ------------------------------------------------------------------
+
+    def _on_font_size_changed(self):
+        self._font_size_label.setText(str(self._font_size))
+        QApplication.instance().setFont(self._f())
+        self._load_format()
 
     # ------------------------------------------------------------------
     # Format loading — rebuild the field rows whenever format changes
@@ -395,8 +448,7 @@ class Mu2eSender(QMainWindow):
             return
         self._current_fmt = self.formats[fmt_name]
 
-        bold_font = QFont("Courier", 11)
-        bold_font.setBold(True)
+        bold_font = self._f(bold=True)
 
         # Column header row (row 0)
         headers = ["Field Name", "Word", "Bits", "Value  (hex or decimal)", "Description"]
@@ -427,9 +479,7 @@ class Mu2eSender(QMainWindow):
             if section_label:
                 # Section header spanning all 5 columns
                 sec_lbl = QLabel(f"  {section_label}")
-                sec_bold = QFont("Courier", 11)
-                sec_bold.setBold(True)
-                sec_lbl.setFont(sec_bold)
+                sec_lbl.setFont(self._f(bold=True))
                 sec_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 sec_lbl.setStyleSheet("background-color: #d0e8ff; padding: 2px;")
                 self._fields_grid.addWidget(sec_lbl, row_idx, 0, 1, 5)
@@ -439,8 +489,8 @@ class Mu2eSender(QMainWindow):
                 fr = FieldRow(
                     self._fields_grid, row_idx, field,
                     on_change=self._assemble,
-                    mono_font=self._mono_font,
-                    mono_sm_font=self._mono_sm_font,
+                    mono_font=self._f(),
+                    mono_sm_font=self._f(-1),
                 )
                 self._field_rows.append(fr)
                 row_idx += 1
