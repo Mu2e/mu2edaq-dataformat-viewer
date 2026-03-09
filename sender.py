@@ -7,10 +7,13 @@ using the same YAML format definitions, then send the assembled bytes to the
 viewer over a TCP socket.
 """
 
+import argparse
 import os
 import sys
 import socket
 from pathlib import Path
+
+import config as _config
 
 try:
     import yaml
@@ -240,21 +243,23 @@ class FieldRow:
 # ---------------------------------------------------------------------------
 
 class Mu2eSender(QMainWindow):
-    def __init__(self, yaml_dir: str):
+    def __init__(self, cfg: dict):
         super().__init__()
         self.setWindowTitle("Mu2e Data Format Sender")
         self.resize(1100, 720)
         self.setMinimumSize(700, 500)
 
-        self.yaml_dir = yaml_dir
-        self.formats = load_yaml_formats(yaml_dir)
+        self._cfg = cfg
+        self.yaml_dir = cfg["formats_dir"]
+        self.formats = load_yaml_formats(self.yaml_dir)
         self._little_endian: bool = False
         self._field_rows: list[FieldRow] = []
         self._current_fmt: dict = {}
 
-        self._font_size = 11
+        self._font_size = int(cfg.get("font_size", 11))
 
         self._build_ui()
+        self._apply_config_defaults()
         self._load_format()
 
     # ------------------------------------------------------------------
@@ -284,6 +289,25 @@ class Mu2eSender(QMainWindow):
         self._build_menu()
         self._build_toolbar()
         self._build_central()
+
+    def _apply_config_defaults(self) -> None:
+        """Apply config values that depend on the UI being fully built."""
+        # Default format
+        default = self._cfg.get("default_format", "")
+        if default:
+            idx = self.format_combo.findText(default)
+            if idx >= 0:
+                self.format_combo.blockSignals(True)
+                self.format_combo.setCurrentIndex(idx)
+                self.format_combo.blockSignals(False)
+
+        # Sender host and port
+        sender_cfg = self._cfg.get("sender", {})
+        self.host_edit.setText(str(sender_cfg.get("host", "localhost")))
+        self.port_edit.setText(str(sender_cfg.get("port", 7755)))
+
+        # Font size label
+        self._font_size_label.setText(str(self._font_size))
 
     def _build_menu(self):
         menu_bar = self.menuBar()
@@ -619,9 +643,24 @@ class Mu2eSender(QMainWindow):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    yaml_directory = sys.argv[1] if len(sys.argv) > 1 else YAML_DIR
+    parser = argparse.ArgumentParser(description="Mu2e Data Format Sender")
+    parser.add_argument(
+        "--config", metavar="FILE",
+        help="Path to a YAML config file (default: mu2e-viewer.yaml in script dir)",
+    )
+    parser.add_argument(
+        "formats_dir", nargs="?",
+        help="Directory containing format YAML files (overrides config)",
+    )
+    args = parser.parse_args()
+
+    cfg = _config.load(args.config, script_dir=YAML_DIR)
+    if args.formats_dir:
+        cfg["formats_dir"] = args.formats_dir
+
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    window = Mu2eSender(yaml_directory)
+    app.setStyle(cfg.get("qt_style", "Fusion"))
+    app.setFont(QFont("Courier", cfg.get("font_size", 11)))
+    window = Mu2eSender(cfg)
     window.show()
     sys.exit(app.exec())

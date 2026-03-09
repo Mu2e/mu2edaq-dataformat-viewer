@@ -7,11 +7,14 @@ definitions.  Data can be entered manually as hex bytes, loaded from a binary
 file, or received over a TCP socket from an external application.
 """
 
+import argparse
 import os
 import sys
 import socket
 import threading
 from pathlib import Path
+
+import config as _config
 
 try:
     import yaml
@@ -167,14 +170,15 @@ class _Receiver(QObject):
 
 
 class Mu2eViewer(QMainWindow):
-    def __init__(self, yaml_dir: str):
+    def __init__(self, cfg: dict):
         super().__init__()
         self.setWindowTitle("Mu2e Data Format Viewer")
         self.resize(1280, 820)
         self.setMinimumSize(800, 600)
 
-        self.yaml_dir = yaml_dir
-        self.formats: dict = load_yaml_formats(yaml_dir)
+        self._cfg = cfg
+        self.yaml_dir = cfg["formats_dir"]
+        self.formats: dict = load_yaml_formats(self.yaml_dir)
         self.data_bytes: bytes = b""
         self._little_endian: bool = False
         self._field_details: dict = {}   # tree item id → field result dict
@@ -184,9 +188,10 @@ class Mu2eViewer(QMainWindow):
         self._receiver = _Receiver()
         self._receiver.data_received.connect(self._on_socket_data)
 
-        self._font_size = 11
+        self._font_size = int(cfg.get("font_size", 11))
         self._build_ui()
         self._refresh_format_list()
+        self._apply_config_defaults()
 
     # ------------------------------------------------------------------
     # Font helpers
@@ -212,6 +217,22 @@ class Mu2eViewer(QMainWindow):
         self._build_menu()
         self._build_toolbar()
         self._build_central()
+
+    def _apply_config_defaults(self) -> None:
+        """Apply config values that depend on the UI being fully built."""
+        # Default format
+        default = self._cfg.get("default_format", "")
+        if default:
+            idx = self.format_combo.findText(default)
+            if idx >= 0:
+                self.format_combo.setCurrentIndex(idx)
+
+        # Viewer port
+        port = self._cfg.get("viewer", {}).get("port", 7755)
+        self._port_edit.setText(str(port))
+
+        # Font size (widget already initialised with self._font_size; update label)
+        self._font_size_label.setText(str(self._font_size))
 
     def _build_menu(self):
         menu_bar = self.menuBar()
@@ -828,9 +849,24 @@ class Mu2eViewer(QMainWindow):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    yaml_directory = sys.argv[1] if len(sys.argv) > 1 else YAML_DIR
+    parser = argparse.ArgumentParser(description="Mu2e Data Format Viewer")
+    parser.add_argument(
+        "--config", metavar="FILE",
+        help="Path to a YAML config file (default: mu2e-viewer.yaml in script dir)",
+    )
+    parser.add_argument(
+        "formats_dir", nargs="?",
+        help="Directory containing format YAML files (overrides config)",
+    )
+    args = parser.parse_args()
+
+    cfg = _config.load(args.config, script_dir=YAML_DIR)
+    if args.formats_dir:
+        cfg["formats_dir"] = args.formats_dir
+
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    window = Mu2eViewer(yaml_directory)
+    app.setStyle(cfg.get("qt_style", "Fusion"))
+    app.setFont(QFont("Courier", cfg.get("font_size", 11)))
+    window = Mu2eViewer(cfg)
     window.show()
     sys.exit(app.exec())
