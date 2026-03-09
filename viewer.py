@@ -11,14 +11,30 @@ import os
 import sys
 import socket
 import threading
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 try:
     import yaml
 except ImportError:
     print("PyYAML is required.  Install with:  pip install pyyaml")
+    sys.exit(1)
+
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QSplitter,
+        QGroupBox, QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QTextEdit,
+        QToolBar, QLabel, QComboBox, QRadioButton, QButtonGroup, QCheckBox,
+        QPushButton, QSpinBox, QLineEdit, QFileDialog, QMessageBox,
+        QVBoxLayout, QHBoxLayout, QSizePolicy,
+    )
+    from PyQt6.QtCore import (
+        Qt, QObject, pyqtSignal, QTimer, QMetaObject, Q_ARG,
+    )
+    from PyQt6.QtGui import (
+        QFont, QColor, QBrush, QTextCharFormat, QTextCursor,
+    )
+except ImportError:
+    print("PyQt6 is required.  Install with:  pip install PyQt6")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -144,37 +160,31 @@ PACKET_TYPE_MAP = {
 }
 
 
-class Mu2eViewer(tk.Tk):
+class _Receiver(QObject):
+    """Helper QObject used to marshal data from TCP worker threads to the main thread."""
+    data_received = pyqtSignal(bytes)
+
+
+class Mu2eViewer(QMainWindow):
     def __init__(self, yaml_dir: str):
         super().__init__()
-        self.title("Mu2e Data Format Viewer")
-        self.geometry("1280x820")
-        self.minsize(800, 600)
+        self.setWindowTitle("Mu2e Data Format Viewer")
+        self.resize(1280, 820)
+        self.setMinimumSize(800, 600)
 
         self.yaml_dir = yaml_dir
         self.formats: dict = load_yaml_formats(yaml_dir)
         self.data_bytes: bytes = b""
-        self.little_endian = tk.BooleanVar(value=False)
-        self._field_details: dict = {}   # treeview iid → field result dict
+        self._little_endian: bool = False
+        self._field_details: dict = {}   # tree item id → field result dict
         self._server_socket: socket.socket | None = None
 
-        self._apply_fonts()
+        # Cross-thread signal for TCP data
+        self._receiver = _Receiver()
+        self._receiver.data_received.connect(self._on_socket_data)
+
         self._build_ui()
         self._refresh_format_list()
-
-    # ------------------------------------------------------------------
-    # Fonts
-    # ------------------------------------------------------------------
-
-    def _apply_fonts(self):
-        """Apply a fixed-width font to all ttk widgets and the root window."""
-        style = ttk.Style(self)
-        # "." is the root style — all ttk widgets inherit from it
-        style.configure(".",              font=("Courier", 11))
-        style.configure("Treeview",       font=("Courier", 10))
-        style.configure("Treeview.Heading", font=("Courier", 10, "bold"))
-        # Combobox drop-down list uses the Listbox widget (not ttk); set via option_add
-        self.option_add("*TCombobox*Listbox.font", ("Courier", 11))
 
     # ------------------------------------------------------------------
     # UI construction
@@ -182,165 +192,191 @@ class Mu2eViewer(tk.Tk):
 
     def _build_ui(self):
         self._build_toolbar()
-        self._build_panes()
+        self._build_central()
 
     def _build_toolbar(self):
-        bar = ttk.Frame(self, padding=(4, 2))
-        bar.pack(fill=tk.X, side=tk.TOP)
+        bar = self.addToolBar("Main")
+        bar.setMovable(False)
+        bar.setFloatable(False)
 
         # Format selector
-        ttk.Label(bar, text="Packet format:").pack(side=tk.LEFT)
-        self.format_var = tk.StringVar()
-        self.format_combo = ttk.Combobox(
-            bar, textvariable=self.format_var, width=38, state="readonly"
-        )
-        self.format_combo.pack(side=tk.LEFT, padx=(2, 8))
-        self.format_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_display())
+        bar.addWidget(QLabel("  Packet format: "))
+        self.format_combo = QComboBox()
+        self.format_combo.setFont(QFont("Courier", 11))
+        self.format_combo.setMinimumWidth(300)
+        self.format_combo.currentIndexChanged.connect(lambda _: self._refresh_display())
+        bar.addWidget(self.format_combo)
 
-        _sep(bar)
+        bar.addSeparator()
 
         # Display mode
-        ttk.Label(bar, text="Values:").pack(side=tk.LEFT)
-        self.display_mode = tk.StringVar(value="hex")
+        bar.addWidget(QLabel("  Values: "))
+        self._display_mode_group = QButtonGroup(self)
         for label, val in (("Hex", "hex"), ("Binary", "bin"), ("Decimal", "dec")):
-            ttk.Radiobutton(
-                bar, text=label, variable=self.display_mode, value=val,
-                command=self._refresh_display
-            ).pack(side=tk.LEFT)
+            rb = QRadioButton(label)
+            rb.setProperty("mode_value", val)
+            rb.setFont(QFont("Courier", 11))
+            if val == "hex":
+                rb.setChecked(True)
+            self._display_mode_group.addButton(rb)
+            bar.addWidget(rb)
+        self._display_mode_group.buttonClicked.connect(lambda _: self._refresh_display())
 
-        _sep(bar)
+        bar.addSeparator()
 
-        ttk.Checkbutton(
-            bar, text="Little-endian words",
-            variable=self.little_endian, command=self._refresh_display
-        ).pack(side=tk.LEFT)
+        self._le_check = QCheckBox("Little-endian words")
+        self._le_check.setFont(QFont("Courier", 11))
+        self._le_check.stateChanged.connect(lambda _: self._on_le_changed())
+        bar.addWidget(self._le_check)
 
-        _sep(bar)
+        bar.addSeparator()
 
-        ttk.Button(bar, text="Load file…", command=self._load_file).pack(side=tk.LEFT, padx=2)
-        ttk.Button(bar, text="Auto-detect type", command=self._auto_detect).pack(side=tk.LEFT, padx=2)
-        ttk.Button(bar, text="Clear", command=self._clear).pack(side=tk.LEFT, padx=2)
+        btn_load = QPushButton("Load file\u2026")
+        btn_load.setFont(QFont("Courier", 11))
+        btn_load.clicked.connect(self._load_file)
+        bar.addWidget(btn_load)
 
-        _sep(bar)
+        btn_auto = QPushButton("Auto-detect type")
+        btn_auto.setFont(QFont("Courier", 11))
+        btn_auto.clicked.connect(self._auto_detect)
+        bar.addWidget(btn_auto)
+
+        btn_clear = QPushButton("Clear")
+        btn_clear.setFont(QFont("Courier", 11))
+        btn_clear.clicked.connect(self._clear)
+        bar.addWidget(btn_clear)
+
+        bar.addSeparator()
 
         # Decode offset
-        ttk.Label(bar, text="Offset (bytes):").pack(side=tk.LEFT)
-        self.offset_var = tk.StringVar(value="0")
-        offset_spin = ttk.Spinbox(
-            bar, textvariable=self.offset_var, from_=0, to=65535,
-            width=6, command=self._refresh_display,
-        )
-        offset_spin.pack(side=tk.LEFT, padx=2)
-        offset_spin.bind("<Return>",   lambda _e: self._refresh_display())
-        offset_spin.bind("<FocusOut>", lambda _e: self._refresh_display())
+        bar.addWidget(QLabel("  Offset (bytes): "))
+        self._offset_spin = QSpinBox()
+        self._offset_spin.setFont(QFont("Courier", 11))
+        self._offset_spin.setRange(0, 65535)
+        self._offset_spin.setValue(0)
+        self._offset_spin.valueChanged.connect(lambda _: self._refresh_display())
+        bar.addWidget(self._offset_spin)
 
-        _sep(bar)
+        bar.addSeparator()
 
         # Socket listener
-        ttk.Label(bar, text="TCP port:").pack(side=tk.LEFT)
-        self.port_var = tk.StringVar(value="7755")
-        ttk.Entry(bar, textvariable=self.port_var, width=6).pack(side=tk.LEFT, padx=2)
-        self.listen_btn = ttk.Button(bar, text="Start listening", command=self._toggle_server)
-        self.listen_btn.pack(side=tk.LEFT, padx=2)
+        bar.addWidget(QLabel("  TCP port: "))
+        self._port_edit = QLineEdit("7755")
+        self._port_edit.setFont(QFont("Courier", 11))
+        self._port_edit.setFixedWidth(60)
+        bar.addWidget(self._port_edit)
 
-        self.status_var = tk.StringVar(value="No data")
-        ttk.Label(bar, textvariable=self.status_var, foreground="gray").pack(
-            side=tk.LEFT, padx=8
-        )
+        self._listen_btn = QPushButton("Start listening")
+        self._listen_btn.setFont(QFont("Courier", 11))
+        self._listen_btn.clicked.connect(self._toggle_server)
+        bar.addWidget(self._listen_btn)
 
-    def _build_panes(self):
-        paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+        bar.addSeparator()
+
+        self._status_label = QLabel("No data")
+        self._status_label.setFont(QFont("Courier", 11))
+        self._status_label.setStyleSheet("color: gray;")
+        bar.addWidget(self._status_label)
+
+    def _build_central(self):
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        self.setCentralWidget(splitter)
 
         # ── Raw hex input ──────────────────────────────────────────────
-        input_frame = ttk.LabelFrame(paned, text="Raw bytes  (hex input)", padding=4)
-        paned.add(input_frame, weight=1)
+        input_group = QGroupBox("Raw bytes  (hex input)")
+        input_group.setFont(QFont("Courier", 11))
+        input_layout = QVBoxLayout(input_group)
+        input_layout.setContentsMargins(4, 4, 4, 4)
 
-        ttk.Label(
-            input_frame,
-            text="Enter hex bytes separated by spaces (e.g.  10 00 80 50  or  0x10 0x00 …)",
-            foreground="gray", font=("Courier", 10),
-        ).pack(side=tk.BOTTOM, anchor=tk.W)
+        self.hex_input = QPlainTextEdit()
+        self.hex_input.setFont(QFont("Courier", 11))
+        self.hex_input.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        self.hex_input.textChanged.connect(self._refresh_display)
+        self.hex_input.mousePressEvent = self._on_hex_mouse_press
+        input_layout.addWidget(self.hex_input)
 
-        sb_in = ttk.Scrollbar(input_frame, orient=tk.VERTICAL)
-        sb_in.pack(side=tk.RIGHT, fill=tk.Y)
-
-        self.hex_input = tk.Text(
-            input_frame, height=4, font=("Courier", 11), wrap=tk.WORD,
-            undo=True, yscrollcommand=sb_in.set,
+        hint = QLabel(
+            "Enter hex bytes separated by spaces (e.g.  10 00 80 50  or  0x10 0x00 \u2026)"
         )
-        sb_in.config(command=self.hex_input.yview)
-        self.hex_input.pack(fill=tk.BOTH, expand=True)
-        self.hex_input.bind("<KeyRelease>", lambda _e: self._refresh_display())
-        self.hex_input.bind("<Button-1>", self._on_hex_click)
-        self.hex_input.tag_configure(
-            "offset_mark", foreground="red", font=("Courier", 11, "bold")
-        )
+        hint.setFont(QFont("Courier", 10))
+        hint.setStyleSheet("color: gray;")
+        input_layout.addWidget(hint)
+
+        splitter.addWidget(input_group)
 
         # ── Field breakdown tree ───────────────────────────────────────
-        breakdown_frame = ttk.LabelFrame(paned, text="Field breakdown", padding=4)
-        paned.add(breakdown_frame, weight=4)
+        breakdown_group = QGroupBox("Field breakdown")
+        breakdown_group.setFont(QFont("Courier", 11))
+        breakdown_layout = QVBoxLayout(breakdown_group)
+        breakdown_layout.setContentsMargins(4, 4, 4, 4)
 
-        cols = ("field", "word", "bits", "hex", "binary", "decimal", "decoded")
-        self.tree = ttk.Treeview(
-            breakdown_frame, columns=cols, show="headings", selectmode="browse"
+        self.tree = QTreeWidget()
+        self.tree.setFont(QFont("Courier", 10))
+        self.tree.setColumnCount(7)
+        self.tree.setHeaderLabels(
+            ["Field Name", "Word", "Bits", "Hex", "Binary", "Dec", "Decoded / Description"]
         )
-        for col, heading, width, anchor in (
-            ("field",   "Field Name",             220, tk.E),
-            ("word",    "Word",                    48, tk.E),
-            ("bits",    "Bits",                    60, tk.E),
-            ("hex",     "Hex",                     80, tk.E),
-            ("binary",  "Binary",                 160, tk.E),
-            ("decimal", "Dec",                     60, tk.E),
-            ("decoded", "Decoded / Description",  500, tk.E),
-        ):
-            self.tree.heading(col, text=heading, anchor=tk.E, command=lambda c=col: None)
-            self.tree.column(col, width=width, minwidth=40, anchor=anchor)
 
-        vsb = ttk.Scrollbar(breakdown_frame, orient=tk.VERTICAL, command=self.tree.yview)
-        hsb = ttk.Scrollbar(breakdown_frame, orient=tk.HORIZONTAL, command=self.tree.xview)
-        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        # Right-align all column headers
+        header = self.tree.header()
+        header.setFont(QFont("Courier", 10))
+        header.setDefaultAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
 
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        vsb.grid(row=0, column=1, sticky="ns")
-        hsb.grid(row=1, column=0, sticky="ew")
-        breakdown_frame.rowconfigure(0, weight=1)
-        breakdown_frame.columnconfigure(0, weight=1)
+        # Column widths
+        for col, width in enumerate((220, 48, 60, 80, 160, 60, 500)):
+            self.tree.setColumnWidth(col, width)
 
-        # Row colour tags
-        self.tree.tag_configure("section",  background="#d0e8ff", font=("Courier", 10, "bold"))
-        self.tree.tag_configure("ok",       background="white")
-        self.tree.tag_configure("fixed_ok", background="#e8f5e9")
-        self.tree.tag_configure("error",    background="#ffcccc")
-        self.tree.tag_configure("reserved", foreground="#888888")
+        self.tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        self.tree.itemSelectionChanged.connect(self._on_tree_select)
+        breakdown_layout.addWidget(self.tree)
 
-        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+        splitter.addWidget(breakdown_group)
 
         # ── Detail panel ───────────────────────────────────────────────
-        detail_frame = ttk.LabelFrame(paned, text="Field detail", padding=4)
-        paned.add(detail_frame, weight=1)
+        detail_group = QGroupBox("Field detail")
+        detail_group.setFont(QFont("Courier", 11))
+        detail_layout = QVBoxLayout(detail_group)
+        detail_layout.setContentsMargins(4, 4, 4, 4)
 
-        self.detail_text = tk.Text(
-            detail_frame, height=6, wrap=tk.WORD,
-            font=("Courier", 10), state=tk.DISABLED,
-            background="#f8f8f8"
-        )
-        sb_det = ttk.Scrollbar(detail_frame, command=self.detail_text.yview)
-        self.detail_text.config(yscrollcommand=sb_det.set)
-        self.detail_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
-        sb_det.pack(side=tk.RIGHT, fill=tk.Y)
+        self.detail_text = QTextEdit()
+        self.detail_text.setFont(QFont("Courier", 10))
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setStyleSheet("background-color: #f8f8f8;")
+        detail_layout.addWidget(self.detail_text)
+
+        splitter.addWidget(detail_group)
+
+        # Splitter proportions: hex input small, tree large, detail small
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 4)
+        splitter.setStretchFactor(2, 1)
 
     # ------------------------------------------------------------------
     # Format list management
     # ------------------------------------------------------------------
 
-    def _byte_token_positions(self) -> list[tuple[str, str]]:
+    def _refresh_format_list(self):
+        names = sorted(self.formats.keys())
+        self.format_combo.blockSignals(True)
+        self.format_combo.clear()
+        for name in names:
+            self.format_combo.addItem(name)
+        self.format_combo.blockSignals(False)
+        if names:
+            self.format_combo.setCurrentIndex(0)
+
+    # ------------------------------------------------------------------
+    # Hex input: byte token positions and click handling
+    # ------------------------------------------------------------------
+
+    def _byte_token_positions(self) -> list[tuple[int, int]]:
         """
-        Return a list of (start_index, end_index) tk text widget indices,
-        one entry per hex byte token in self.hex_input.
-        Handles wrapped lines correctly by walking the raw character string.
+        Return a list of (start_char_pos, end_char_pos) absolute character
+        offsets in the plain text, one entry per hex byte token.
         """
-        text = self.hex_input.get("1.0", tk.END)
+        text = self.hex_input.toPlainText()
         positions = []
         i = 0
         while i < len(text):
@@ -354,53 +390,65 @@ class Mu2eViewer(tk.Tk):
                 i += 1
             token_end = i
             if token_end > token_start:
-                # Convert absolute char offsets → "line.col" tk indices
-                before_start = text[:token_start]
-                line_s = before_start.count("\n") + 1
-                col_s  = token_start - (before_start.rfind("\n") + 1)
-
-                before_end = text[:token_end]
-                line_e = before_end.count("\n") + 1
-                col_e  = token_end - (before_end.rfind("\n") + 1)
-
-                positions.append((f"{line_s}.{col_s}", f"{line_e}.{col_e}"))
+                positions.append((token_start, token_end))
         return positions
 
-    def _on_hex_click(self, event: tk.Event) -> None:
-        """Set the decode offset to whichever byte token the user clicked."""
-        click_idx = self.hex_input.index(f"@{event.x},{event.y}")
+    def _on_hex_mouse_press(self, event) -> None:
+        """Override for hex_input.mousePressEvent — sets offset to clicked byte."""
+        # Let the widget handle the click first (moves cursor)
+        QPlainTextEdit.mousePressEvent(self.hex_input, event)
+
+        cursor = self.hex_input.cursorForPosition(event.pos())
+        click_pos = cursor.position()
+
         for byte_idx, (start, end) in enumerate(self._byte_token_positions()):
-            if (self.hex_input.compare(click_idx, ">=", start) and
-                    self.hex_input.compare(click_idx, "<", end)):
-                self.offset_var.set(str(byte_idx))
-                self._refresh_display()
+            if start <= click_pos < end:
+                self._offset_spin.setValue(byte_idx)
+                # _refresh_display will be called via valueChanged signal
                 return
 
     def _highlight_offset(self, offset: int) -> None:
-        """Colour the 16-bit word (two bytes) at *offset* red in the hex input."""
-        self.hex_input.tag_remove("offset_mark", "1.0", tk.END)
-        if offset < 0:
-            return
-        positions = self._byte_token_positions()
-        # Highlight the two bytes that form the 16-bit word at the offset
-        for byte_idx in (offset, offset + 1):
-            if byte_idx < len(positions):
-                start, end = positions[byte_idx]
-                self.hex_input.tag_add("offset_mark", start, end)
+        """Colour the 16-bit word (two bytes) at *offset* red+bold in the hex input."""
+        # Use ExtraSelections so we don't disturb the user's own cursor/selection
+        selections = []
 
-    def _refresh_format_list(self):
-        names = sorted(self.formats.keys())
-        self.format_combo["values"] = names
-        if names:
-            self.format_combo.set(names[0])
+        if offset >= 0:
+            positions = self._byte_token_positions()
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor("red"))
+            fmt.setFontWeight(QFont.Weight.Bold)
+
+            for byte_idx in (offset, offset + 1):
+                if byte_idx < len(positions):
+                    start, end = positions[byte_idx]
+                    sel = QTextEdit.ExtraSelection()
+                    cursor = self.hex_input.textCursor()
+                    cursor.setPosition(start)
+                    cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                    sel.cursor = cursor
+                    sel.format = fmt
+                    selections.append(sel)
+
+        self.hex_input.setExtraSelections(selections)
 
     # ------------------------------------------------------------------
     # Display / parsing
     # ------------------------------------------------------------------
 
+    def _display_mode(self) -> str:
+        """Return the currently selected display mode string: 'hex', 'bin', or 'dec'."""
+        checked = self._display_mode_group.checkedButton()
+        if checked is not None:
+            return checked.property("mode_value")
+        return "hex"
+
+    def _on_le_changed(self):
+        self._little_endian = self._le_check.isChecked()
+        self._refresh_display()
+
     def _fmt(self, value: int, size_bits: int) -> str:
         """Format *value* according to the current display mode."""
-        mode = self.display_mode.get()
+        mode = self._display_mode()
         if mode == "hex":
             digits = max(1, (size_bits + 3) // 4)
             return f"0x{value:0{digits}X}"
@@ -408,41 +456,42 @@ class Mu2eViewer(tk.Tk):
             return f"{value:0{size_bits}b}"
         return str(value)
 
+    def _set_status(self, text: str):
+        self._status_label.setText(text)
+
     def _refresh_display(self):
-        self.tree.delete(*self.tree.get_children())
+        self.tree.clear()
         self._field_details.clear()
 
-        raw_text = self.hex_input.get("1.0", tk.END).strip()
+        raw_text = self.hex_input.toPlainText().strip()
         if not raw_text:
-            self.status_var.set("No data")
+            self._set_status("No data")
+            self.hex_input.setExtraSelections([])
             return
 
         try:
             data = hex_str_to_bytes(raw_text)
         except ValueError as exc:
-            self.status_var.set(f"Parse error: {exc}")
+            self._set_status(f"Parse error: {exc}")
             return
 
         self.data_bytes = data
 
         # Decode offset
-        try:
-            offset = max(0, int(self.offset_var.get()))
-        except ValueError:
-            offset = 0
+        offset = max(0, self._offset_spin.value())
         self._highlight_offset(offset)
         data = data[offset:]
 
-        self.status_var.set(
+        self._set_status(
             f"{len(self.data_bytes)} bytes  |  decoding from offset {offset}"
         )
 
-        fmt_name = self.format_var.get()
+        fmt_name = self.format_combo.currentText()
         if not fmt_name or fmt_name not in self.formats:
             return
 
         fmt = self.formats[fmt_name]
-        le = self.little_endian.get()
+        le = self._little_endian
 
         # Collect sections to display.  Some formats have top-level 'fields';
         # others (e.g. tracker) have 'packet_1', 'packet_2' sub-dicts.
@@ -455,16 +504,30 @@ class Mu2eViewer(tk.Tk):
                 label = sub.get("description", key.replace("_", " ").title())
                 sections.append((label, sub["fields"]))
 
+        # Colours / brushes
+        brush_white   = QBrush(QColor("white"))
+        brush_green   = QBrush(QColor("#e8f5e9"))
+        brush_red     = QBrush(QColor("#ffcccc"))
+        brush_blue    = QBrush(QColor("#d0e8ff"))
+        brush_grey_fg = QBrush(QColor("#888888"))
+
+        align_right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        bold_font   = QFont("Courier", 10)
+        bold_font.setBold(True)
+        normal_font = QFont("Courier", 10)
+
         for section_label, fields in sections:
             if section_label:
-                self.tree.insert(
-                    "", tk.END,
-                    values=(f"  {section_label}", "", "", "", "", "", ""),
-                    tags=("section",),
-                )
+                sec_item = QTreeWidgetItem(self.tree)
+                sec_item.setText(0, f"  {section_label}")
+                sec_item.setFont(0, bold_font)
+                for col in range(7):
+                    sec_item.setTextAlignment(col, align_right)
+                    sec_item.setBackground(col, brush_blue)
+                    sec_item.setFont(col, bold_font)
 
             for item in parse_fields(data, fields, le):
-                value = item["value"]
+                value     = item["value"]
                 size_bits = item["size_bits"]
 
                 hex_val = f"0x{value:0{max(1,(size_bits+3)//4)}X}"
@@ -489,28 +552,49 @@ class Mu2eViewer(tk.Tk):
                 elif "reserved" in item["name"].lower():
                     tag = "reserved"
 
-                iid = self.tree.insert(
-                    "", tk.END,
-                    values=(
-                        item["name"], item["word"], item["bits"],
-                        hex_val, bin_val, dec_val,
-                        decoded,
-                    ),
-                    tags=(tag,),
-                )
-                self._field_details[iid] = item
+                row_item = QTreeWidgetItem(self.tree)
+                row_item.setText(0, item["name"])
+                row_item.setText(1, str(item["word"]))
+                row_item.setText(2, item["bits"])
+                row_item.setText(3, hex_val)
+                row_item.setText(4, bin_val)
+                row_item.setText(5, dec_val)
+                row_item.setText(6, decoded)
 
-    def _on_tree_select(self, _event):
-        sel = self.tree.selection()
-        if not sel:
-            return
-        item = self._field_details.get(sel[0])
-        if not item:
-            return
+                for col in range(7):
+                    row_item.setTextAlignment(col, align_right)
+                    row_item.setFont(col, normal_font)
 
-        value = item["value"]
+                # Apply row colouring
+                if tag == "fixed_ok":
+                    for col in range(7):
+                        row_item.setBackground(col, brush_green)
+                elif tag == "error":
+                    for col in range(7):
+                        row_item.setBackground(col, brush_red)
+                elif tag == "reserved":
+                    for col in range(7):
+                        row_item.setForeground(col, brush_grey_fg)
+                else:
+                    for col in range(7):
+                        row_item.setBackground(col, brush_white)
+
+                # Store field detail, keyed by the item object id
+                self._field_details[id(row_item)] = (row_item, item)
+
+    def _on_tree_select(self):
+        selected = self.tree.selectedItems()
+        if not selected:
+            return
+        row_item = selected[0]
+        entry = self._field_details.get(id(row_item))
+        if not entry:
+            return
+        _, item = entry
+
+        value     = item["value"]
         size_bits = item["size_bits"]
-        decoded = decode_value(value, item)
+        decoded   = decode_value(value, item)
 
         lines = [
             f"Field:      {item['name']}",
@@ -530,7 +614,7 @@ class Mu2eViewer(tk.Tk):
             lines.append("")
             lines.append("Defined values:")
             for k, v in vals.items():
-                lines.append(f"  {k!s:8s} → {v}")
+                lines.append(f"  {k!s:8s} \u2192 {v}")
 
         subs = item["subfields"]
         if subs:
@@ -539,13 +623,10 @@ class Mu2eViewer(tk.Tk):
             for sf in subs:
                 desc = str(sf.get("description", "")).strip()
                 if len(desc) > 80:
-                    desc = desc[:77] + "…"
+                    desc = desc[:77] + "\u2026"
                 lines.append(f"  [{sf.get('bits', ''):5s}]  {sf.get('name', '')}:  {desc}")
 
-        self.detail_text.config(state=tk.NORMAL)
-        self.detail_text.delete("1.0", tk.END)
-        self.detail_text.insert("1.0", "\n".join(lines))
-        self.detail_text.config(state=tk.DISABLED)
+        self.detail_text.setPlainText("\n".join(lines))
 
     # ------------------------------------------------------------------
     # Packet-type auto-detection
@@ -553,32 +634,36 @@ class Mu2eViewer(tk.Tk):
 
     def _auto_detect(self):
         if len(self.data_bytes) < 4:
-            messagebox.showinfo("Auto-detect", "Need at least 4 bytes of data.")
+            QMessageBox.information(self, "Auto-detect", "Need at least 4 bytes of data.")
             return
-        le = self.little_endian.get()
+        le = self._little_endian
         w1 = get_word(self.data_bytes, 1, le)
         if w1 is None:
             return
         ptype = (w1 >> 4) & 0xF
         candidate = PACKET_TYPE_MAP.get(ptype)
         if candidate and candidate in self.formats:
-            self.format_var.set(candidate)
+            # Block signals to avoid double refresh, then set and refresh once
+            self.format_combo.blockSignals(True)
+            idx = self.format_combo.findText(candidate)
+            if idx >= 0:
+                self.format_combo.setCurrentIndex(idx)
+            self.format_combo.blockSignals(False)
             self._refresh_display()
-            self.status_var.set(f"Auto-detected: {candidate}  (type 0x{ptype:X})")
+            self._set_status(f"Auto-detected: {candidate}  (type 0x{ptype:X})")
         else:
-            self.status_var.set(f"Unknown packet type 0x{ptype:X}")
+            self._set_status(f"Unknown packet type 0x{ptype:X}")
 
     # ------------------------------------------------------------------
     # File loading
     # ------------------------------------------------------------------
 
     def _load_file(self):
-        path = filedialog.askopenfilename(
-            title="Load binary data file",
-            filetypes=[
-                ("Binary / raw files", "*.bin *.dat *.raw"),
-                ("All files", "*.*"),
-            ],
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load binary data file",
+            "",
+            "Binary / raw files (*.bin *.dat *.raw);;All files (*.*)",
         )
         if not path:
             return
@@ -588,19 +673,22 @@ class Mu2eViewer(tk.Tk):
 
     def _set_bytes(self, data: bytes):
         hex_str = " ".join(f"{b:02X}" for b in data)
-        self.hex_input.delete("1.0", tk.END)
-        self.hex_input.insert("1.0", hex_str)
+        # Block textChanged signal to avoid double refresh
+        self.hex_input.blockSignals(True)
+        self.hex_input.setPlainText(hex_str)
+        self.hex_input.blockSignals(False)
         self._refresh_display()
 
     def _clear(self):
-        self.hex_input.delete("1.0", tk.END)
+        self.hex_input.blockSignals(True)
+        self.hex_input.clear()
+        self.hex_input.blockSignals(False)
+        self.hex_input.setExtraSelections([])
         self.data_bytes = b""
-        self.tree.delete(*self.tree.get_children())
+        self.tree.clear()
         self._field_details.clear()
-        self.detail_text.config(state=tk.NORMAL)
-        self.detail_text.delete("1.0", tk.END)
-        self.detail_text.config(state=tk.DISABLED)
-        self.status_var.set("No data")
+        self.detail_text.clear()
+        self._set_status("No data")
 
     # ------------------------------------------------------------------
     # TCP socket server (receives raw bytes from external application)
@@ -614,9 +702,9 @@ class Mu2eViewer(tk.Tk):
 
     def _start_server(self):
         try:
-            port = int(self.port_var.get())
+            port = int(self._port_edit.text())
         except ValueError:
-            messagebox.showerror("Error", "Invalid port number.")
+            QMessageBox.critical(self, "Error", "Invalid port number.")
             return
         try:
             srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -625,10 +713,10 @@ class Mu2eViewer(tk.Tk):
             srv.listen(5)
             self._server_socket = srv
             threading.Thread(target=self._accept_loop, daemon=True).start()
-            self.listen_btn.config(text="Stop listening")
-            self.status_var.set(f"Listening on TCP port {port}…")
+            self._listen_btn.setText("Stop listening")
+            self._set_status(f"Listening on TCP port {port}\u2026")
         except OSError as exc:
-            messagebox.showerror("Error", f"Could not start server:\n{exc}")
+            QMessageBox.critical(self, "Error", f"Could not start server:\n{exc}")
 
     def _stop_server(self):
         if self._server_socket:
@@ -637,8 +725,8 @@ class Mu2eViewer(tk.Tk):
             except Exception:
                 pass
             self._server_socket = None
-        self.listen_btn.config(text="Start listening")
-        self.status_var.set("Server stopped.")
+        self._listen_btn.setText("Start listening")
+        self._set_status("Server stopped.")
 
     def _accept_loop(self):
         while self._server_socket:
@@ -660,8 +748,8 @@ class Mu2eViewer(tk.Tk):
                 chunks.append(chunk)
             payload = b"".join(chunks)
             if payload:
-                # Schedule UI update on the main thread
-                self.after(0, lambda d=payload: self._on_socket_data(d))
+                # Emit signal — Qt marshals this safely to the main thread
+                self._receiver.data_received.emit(payload)
         except Exception:
             pass
         finally:
@@ -670,15 +758,7 @@ class Mu2eViewer(tk.Tk):
     def _on_socket_data(self, data: bytes):
         self._set_bytes(data)
         self._auto_detect()
-        self.status_var.set(f"Received {len(data)} bytes via TCP")
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _sep(parent):
-    ttk.Separator(parent, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=6, pady=2)
+        self._set_status(f"Received {len(data)} bytes via TCP")
 
 
 # ---------------------------------------------------------------------------
@@ -687,5 +767,8 @@ def _sep(parent):
 
 if __name__ == "__main__":
     yaml_directory = sys.argv[1] if len(sys.argv) > 1 else YAML_DIR
-    app = Mu2eViewer(yaml_directory)
-    app.mainloop()
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    window = Mu2eViewer(yaml_directory)
+    window.show()
+    sys.exit(app.exec())

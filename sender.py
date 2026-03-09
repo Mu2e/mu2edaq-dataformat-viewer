@@ -10,14 +10,25 @@ viewer over a TCP socket.
 import os
 import sys
 import socket
-import tkinter as tk
-from tkinter import ttk, messagebox
 from pathlib import Path
 
 try:
     import yaml
 except ImportError:
     print("PyYAML is required.  Install with:  pip install pyyaml")
+    sys.exit(1)
+
+try:
+    from PyQt6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QSplitter,
+        QGroupBox, QTextEdit, QToolBar, QLabel, QComboBox, QCheckBox,
+        QPushButton, QLineEdit, QMessageBox,
+        QScrollArea, QGridLayout, QVBoxLayout, QSizePolicy,
+    )
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QFont
+except ImportError:
+    print("PyQt6 is required.  Install with:  pip install PyQt6")
     sys.exit(1)
 
 YAML_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -114,35 +125,7 @@ def parse_int(text: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Scrollable frame helper
-# ---------------------------------------------------------------------------
-
-class ScrollableFrame(ttk.Frame):
-    """A ttk.Frame with a vertical scrollbar, usable like a normal Frame."""
-
-    def __init__(self, parent, **kwargs):
-        super().__init__(parent, **kwargs)
-        canvas = tk.Canvas(self, highlightthickness=0)
-        vsb = ttk.Scrollbar(self, orient=tk.VERTICAL, command=canvas.yview)
-        canvas.configure(yscrollcommand=vsb.set)
-        vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        self.inner = ttk.Frame(canvas)
-        self._window_id = canvas.create_window((0, 0), window=self.inner, anchor=tk.NW)
-
-        self.inner.bind("<Configure>",
-                        lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.bind("<Configure>",
-                    lambda e: canvas.itemconfigure(self._window_id, width=e.width))
-        # Mouse-wheel scrolling
-        canvas.bind_all("<MouseWheel>",
-                        lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        self._canvas = canvas
-
-
-# ---------------------------------------------------------------------------
-# Per-field entry row
+# Per-field row
 # ---------------------------------------------------------------------------
 
 class FieldRow:
@@ -154,12 +137,11 @@ class FieldRow:
     COL_ENTRY = 3
     COL_DESC  = 4
 
-    def __init__(self, parent: tk.Widget, row_idx: int, field: dict,
-                 on_change, mono: tuple):
+    def __init__(self, grid: QGridLayout, row_idx: int, field: dict,
+                 on_change, mono_font: QFont, mono_sm_font: QFont):
         self.field = field
-        self.on_change = on_change
-        self._var = tk.StringVar()
         self._enum_map: dict[str, int] = {}  # display string → integer value
+        self._widget = None
 
         name     = field.get("name", "?")
         bits     = str(field.get("bits", "?"))
@@ -170,17 +152,19 @@ class FieldRow:
         size     = int(field.get("size_bits", 1))
         reserved = "reserved" in name.lower()
 
-        fg = "#888888" if reserved else "black"
+        fg_color = "#888888" if reserved else ""
 
-        ttk.Label(parent, text=name,  font=mono, foreground=fg,
-                  anchor=tk.E).grid(row=row_idx, column=self.COL_NAME,
-                                    sticky=tk.EW, padx=(4, 2), pady=1)
-        ttk.Label(parent, text=word,  font=mono, foreground=fg,
-                  anchor=tk.E).grid(row=row_idx, column=self.COL_WORD,
-                                    sticky=tk.EW, padx=2, pady=1)
-        ttk.Label(parent, text=bits,  font=mono, foreground=fg,
-                  anchor=tk.E).grid(row=row_idx, column=self.COL_BITS,
-                                    sticky=tk.EW, padx=2, pady=1)
+        def _make_label(text, font=mono_sm_font):
+            lbl = QLabel(text)
+            lbl.setFont(font)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if fg_color:
+                lbl.setStyleSheet(f"color: {fg_color};")
+            return lbl
+
+        grid.addWidget(_make_label(name), row_idx, self.COL_NAME)
+        grid.addWidget(_make_label(word), row_idx, self.COL_WORD)
+        grid.addWidget(_make_label(bits), row_idx, self.COL_BITS)
 
         if vals:
             # Enum combobox — build display options sorted by integer key
@@ -195,207 +179,239 @@ class FieldRow:
                 options.append((int_key, label))
             options.sort()
             display_opts = [lbl for _, lbl in options]
-            self._widget = ttk.Combobox(parent, textvariable=self._var,
-                                        values=display_opts, state="readonly",
-                                        font=mono, width=36)
+
+            widget = QComboBox()
+            widget.setFont(mono_sm_font)
+            widget.setEditable(False)
+            for opt in display_opts:
+                widget.addItem(opt)
             if display_opts:
-                self._var.set(display_opts[0])
+                widget.setCurrentIndex(0)
+            if fv is not None:
+                widget.setEnabled(False)
+            widget.currentIndexChanged.connect(lambda _: on_change())
+            self._widget = widget
         else:
-            self._widget = ttk.Entry(parent, textvariable=self._var,
-                                     font=mono, width=20)
+            widget = QLineEdit()
+            widget.setFont(mono_sm_font)
+            if fv is not None:
+                try:
+                    fv_int = parse_int(str(fv))
+                except ValueError:
+                    fv_int = 0
+                hex_digits = max(1, (size + 3) // 4)
+                widget.setText(f"0x{fv_int:0{hex_digits}X}")
+                widget.setEnabled(False)
+            widget.textChanged.connect(lambda _: on_change())
+            self._widget = widget
 
-        if fv is not None:
-            try:
-                fv_int = parse_int(str(fv))
-            except ValueError:
-                fv_int = 0
-            hex_digits = max(1, (size + 3) // 4)
-            self._var.set(f"0x{fv_int:0{hex_digits}X}")
-            self._widget.configure(state="disabled")
+        if fg_color and isinstance(self._widget, QLineEdit):
+            self._widget.setStyleSheet(f"color: {fg_color};")
 
-        self._widget.grid(row=row_idx, column=self.COL_ENTRY,
-                          sticky=tk.EW, padx=2, pady=1)
+        grid.addWidget(self._widget, row_idx, self.COL_ENTRY)
 
-        short_desc = desc if len(desc) <= 60 else desc[:57] + "…"
-        ttk.Label(parent, text=short_desc, font=mono, foreground="#555555",
-                  anchor=tk.E).grid(row=row_idx, column=self.COL_DESC,
-                                    sticky=tk.EW, padx=(2, 4), pady=1)
-
-        self._var.trace_add("write", lambda *_: on_change())
+        short_desc = desc if len(desc) <= 60 else desc[:57] + "\u2026"
+        desc_lbl = QLabel(short_desc)
+        desc_lbl.setFont(mono_sm_font)
+        desc_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        desc_lbl.setStyleSheet("color: #555555;")
+        grid.addWidget(desc_lbl, row_idx, self.COL_DESC)
 
     def get_value(self) -> int | None:
         """Return the integer value currently entered, or None on error."""
-        raw = self._var.get().strip()
-        if not raw:
-            return 0
-        # Enum combobox
-        if self._enum_map:
+        if isinstance(self._widget, QComboBox):
+            raw = self._widget.currentText().strip()
+            if not raw:
+                return 0
             return self._enum_map.get(raw, 0)
-        try:
-            return parse_int(raw)
-        except ValueError:
-            return None
-
-
-# ---------------------------------------------------------------------------
-# Section header row
-# ---------------------------------------------------------------------------
-
-def _section_header(parent: tk.Widget, row_idx: int, label: str, mono: tuple):
-    ttk.Label(
-        parent, text=f"  {label}",
-        font=(mono[0], mono[1], "bold"),
-        background="#d0e8ff", anchor=tk.E,
-    ).grid(row=row_idx, column=0, columnspan=5, sticky=tk.EW,
-           padx=2, pady=(6, 2))
+        else:
+            raw = self._widget.text().strip()
+            if not raw:
+                return 0
+            try:
+                return parse_int(raw)
+            except ValueError:
+                return None
 
 
 # ---------------------------------------------------------------------------
 # Main application
 # ---------------------------------------------------------------------------
 
-MONO = ("Courier", 11)
-MONO_SM = ("Courier", 10)
-
-
-class Mu2eSender(tk.Tk):
+class Mu2eSender(QMainWindow):
     def __init__(self, yaml_dir: str):
         super().__init__()
-        self.title("Mu2e Data Format Sender")
-        self.geometry("1100x720")
-        self.minsize(700, 500)
+        self.setWindowTitle("Mu2e Data Format Sender")
+        self.resize(1100, 720)
+        self.setMinimumSize(700, 500)
 
         self.yaml_dir = yaml_dir
         self.formats = load_yaml_formats(yaml_dir)
-        self.little_endian = tk.BooleanVar(value=False)
+        self._little_endian: bool = False
         self._field_rows: list[FieldRow] = []
         self._current_fmt: dict = {}
 
-        self._apply_fonts()
+        self._mono_font = QFont("Courier", 11)
+        self._mono_sm_font = QFont("Courier", 10)
+
         self._build_ui()
         self._load_format()
 
     # ------------------------------------------------------------------
-    # Fonts / style
-    # ------------------------------------------------------------------
-
-    def _apply_fonts(self):
-        style = ttk.Style(self)
-        style.configure(".",                 font=MONO)
-        style.configure("Treeview",          font=MONO_SM)
-        style.configure("Treeview.Heading",  font=(MONO[0], MONO[1], "bold"))
-        self.option_add("*TCombobox*Listbox.font", MONO)
-
-    # ------------------------------------------------------------------
-    # UI
+    # UI construction
     # ------------------------------------------------------------------
 
     def _build_ui(self):
-        # ── Toolbar ───────────────────────────────────────────────────
-        bar = ttk.Frame(self, padding=(4, 4))
-        bar.pack(fill=tk.X, side=tk.TOP)
+        self._build_toolbar()
+        self._build_central()
 
-        ttk.Label(bar, text="Packet format:", font=MONO).pack(side=tk.LEFT)
-        self.format_var = tk.StringVar()
+    def _build_toolbar(self):
+        bar = self.addToolBar("Main")
+        bar.setMovable(False)
+        bar.setFloatable(False)
+
+        bar.addWidget(QLabel("  Packet format: "))
+
+        self.format_combo = QComboBox()
+        self.format_combo.setFont(self._mono_font)
+        self.format_combo.setMinimumWidth(300)
         fmt_names = sorted(self.formats.keys())
-        self.format_combo = ttk.Combobox(
-            bar, textvariable=self.format_var, values=fmt_names,
-            width=36, state="readonly", font=MONO,
-        )
+        for name in fmt_names:
+            self.format_combo.addItem(name)
         if fmt_names:
-            self.format_combo.set(fmt_names[0])
-        self.format_combo.pack(side=tk.LEFT, padx=(2, 8))
-        self.format_combo.bind("<<ComboboxSelected>>", lambda _e: self._load_format())
+            self.format_combo.setCurrentIndex(0)
+        self.format_combo.currentIndexChanged.connect(lambda _: self._load_format())
+        bar.addWidget(self.format_combo)
 
-        _sep(bar)
+        bar.addSeparator()
 
-        ttk.Checkbutton(bar, text="Little-endian words",
-                        variable=self.little_endian,
-                        command=self._assemble).pack(side=tk.LEFT)
+        self._le_check = QCheckBox("Little-endian words")
+        self._le_check.setFont(self._mono_font)
+        self._le_check.stateChanged.connect(self._on_le_changed)
+        bar.addWidget(self._le_check)
 
-        _sep(bar)
+        bar.addSeparator()
 
-        ttk.Label(bar, text="Viewer host:", font=MONO).pack(side=tk.LEFT)
-        self.host_var = tk.StringVar(value="localhost")
-        ttk.Entry(bar, textvariable=self.host_var, width=14,
-                  font=MONO).pack(side=tk.LEFT, padx=2)
+        bar.addWidget(QLabel("  Viewer host: "))
+        self.host_edit = QLineEdit("localhost")
+        self.host_edit.setFont(self._mono_font)
+        self.host_edit.setFixedWidth(120)
+        bar.addWidget(self.host_edit)
 
-        ttk.Label(bar, text="port:", font=MONO).pack(side=tk.LEFT)
-        self.port_var = tk.StringVar(value="7755")
-        ttk.Entry(bar, textvariable=self.port_var, width=6,
-                  font=MONO).pack(side=tk.LEFT, padx=2)
+        bar.addWidget(QLabel("  port: "))
+        self.port_edit = QLineEdit("7755")
+        self.port_edit.setFont(self._mono_font)
+        self.port_edit.setFixedWidth(60)
+        bar.addWidget(self.port_edit)
 
-        ttk.Button(bar, text="Send to viewer",
-                   command=self._send).pack(side=tk.LEFT, padx=(8, 2))
-        ttk.Button(bar, text="Reset fields",
-                   command=self._load_format).pack(side=tk.LEFT, padx=2)
+        bar.addSeparator()
 
-        self.status_var = tk.StringVar(value="Ready")
-        ttk.Label(bar, textvariable=self.status_var,
-                  foreground="gray", font=MONO).pack(side=tk.LEFT, padx=8)
+        btn_send = QPushButton("Send to viewer")
+        btn_send.setFont(self._mono_font)
+        btn_send.clicked.connect(self._send)
+        bar.addWidget(btn_send)
 
-        # ── Paned area ────────────────────────────────────────────────
-        paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
-        paned.pack(fill=tk.BOTH, expand=True, padx=4, pady=(0, 4))
+        btn_reset = QPushButton("Reset fields")
+        btn_reset.setFont(self._mono_font)
+        btn_reset.clicked.connect(self._load_format)
+        bar.addWidget(btn_reset)
 
-        # ── Field entries ─────────────────────────────────────────────
-        fields_outer = ttk.LabelFrame(paned, text="Packet fields", padding=4)
-        paned.add(fields_outer, weight=4)
+        bar.addSeparator()
 
-        self._scroll = ScrollableFrame(fields_outer)
-        self._scroll.pack(fill=tk.BOTH, expand=True)
+        self._status_label = QLabel("Ready")
+        self._status_label.setFont(self._mono_font)
+        self._status_label.setStyleSheet("color: gray;")
+        bar.addWidget(self._status_label)
 
-        self._fields_frame = self._scroll.inner
-        for col, weight in ((0, 3), (1, 1), (1, 1), (2, 3), (4, 5)):
-            self._fields_frame.columnconfigure(col, weight=weight)
+    def _build_central(self):
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        self.setCentralWidget(splitter)
 
-        # ── Assembled bytes ───────────────────────────────────────────
-        bytes_frame = ttk.LabelFrame(paned, text="Assembled bytes", padding=4)
-        paned.add(bytes_frame, weight=1)
+        # ── Packet fields (scrollable) ─────────────────────────────────
+        fields_group = QGroupBox("Packet fields")
+        fields_group.setFont(self._mono_font)
+        fields_layout = QVBoxLayout(fields_group)
+        fields_layout.setContentsMargins(4, 4, 4, 4)
 
-        self.bytes_text = tk.Text(
-            bytes_frame, height=4, font=MONO, wrap=tk.WORD,
-            state=tk.DISABLED, background="#f8f8f8",
-        )
-        sb = ttk.Scrollbar(bytes_frame, command=self.bytes_text.yview)
-        self.bytes_text.config(yscrollcommand=sb.set)
-        self.bytes_text.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
-        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        self._scroll_area = QScrollArea()
+        self._scroll_area.setWidgetResizable(True)
+
+        self._fields_container = QWidget()
+        self._fields_grid = QGridLayout(self._fields_container)
+        self._fields_grid.setContentsMargins(4, 4, 4, 4)
+        self._fields_grid.setSpacing(2)
+        # Column stretch weights: name, word, bits, value, desc
+        self._fields_grid.setColumnStretch(0, 3)
+        self._fields_grid.setColumnStretch(1, 1)
+        self._fields_grid.setColumnStretch(2, 1)
+        self._fields_grid.setColumnStretch(3, 3)
+        self._fields_grid.setColumnStretch(4, 5)
+
+        self._scroll_area.setWidget(self._fields_container)
+        fields_layout.addWidget(self._scroll_area)
+
+        splitter.addWidget(fields_group)
+
+        # ── Assembled bytes ────────────────────────────────────────────
+        bytes_group = QGroupBox("Assembled bytes")
+        bytes_group.setFont(self._mono_font)
+        bytes_layout = QVBoxLayout(bytes_group)
+        bytes_layout.setContentsMargins(4, 4, 4, 4)
+
+        self.bytes_text = QTextEdit()
+        self.bytes_text.setFont(QFont("Courier", 11))
+        self.bytes_text.setReadOnly(True)
+        self.bytes_text.setStyleSheet("background-color: #f8f8f8;")
+        bytes_layout.addWidget(self.bytes_text)
+
+        splitter.addWidget(bytes_group)
+
+        splitter.setStretchFactor(0, 4)
+        splitter.setStretchFactor(1, 1)
+
+    # ------------------------------------------------------------------
+    # Little-endian toggle
+    # ------------------------------------------------------------------
+
+    def _on_le_changed(self):
+        self._little_endian = self._le_check.isChecked()
+        self._assemble()
 
     # ------------------------------------------------------------------
     # Format loading — rebuild the field rows whenever format changes
     # ------------------------------------------------------------------
 
     def _load_format(self):
-        # Destroy existing rows
-        for w in self._fields_frame.winfo_children():
-            w.destroy()
+        # Clear existing widgets from grid
+        while self._fields_grid.count():
+            item = self._fields_grid.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
         self._field_rows.clear()
 
-        fmt_name = self.format_var.get()
+        fmt_name = self.format_combo.currentText()
         if not fmt_name or fmt_name not in self.formats:
             return
         self._current_fmt = self.formats[fmt_name]
 
-        # Column headings
-        for col, heading in (
-            (FieldRow.COL_NAME,  "Field Name"),
-            (FieldRow.COL_WORD,  "Word"),
-            (FieldRow.COL_BITS,  "Bits"),
-            (FieldRow.COL_ENTRY, "Value  (hex or decimal)"),
-            (FieldRow.COL_DESC,  "Description"),
-        ):
-            ttk.Label(
-                self._fields_frame, text=heading,
-                font=(MONO[0], MONO[1], "bold"),
-                anchor=tk.E, background="#e0e0e0",
-            ).grid(row=0, column=col, sticky=tk.EW, padx=2, pady=(0, 4))
+        bold_font = QFont("Courier", 11)
+        bold_font.setBold(True)
+
+        # Column header row (row 0)
+        headers = ["Field Name", "Word", "Bits", "Value  (hex or decimal)", "Description"]
+        for col, heading in enumerate(headers):
+            lbl = QLabel(heading)
+            lbl.setFont(bold_font)
+            lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            lbl.setStyleSheet("background-color: #e0e0e0; padding: 2px;")
+            self._fields_grid.addWidget(lbl, 0, col)
 
         row_idx = 1
 
         # Collect sections (mirrors viewer.py logic + hit_format)
-        sections: list[tuple[str, list]] = []
         fmt = self._current_fmt
+        sections: list[tuple[str, list]] = []
         if "fields" in fmt:
             sections.append(("", fmt["fields"]))
         for key in ("packet_1", "packet_2"):
@@ -409,13 +425,22 @@ class Mu2eSender(tk.Tk):
 
         for section_label, fields in sections:
             if section_label:
-                _section_header(self._fields_frame, row_idx, section_label, MONO)
+                # Section header spanning all 5 columns
+                sec_lbl = QLabel(f"  {section_label}")
+                sec_bold = QFont("Courier", 11)
+                sec_bold.setBold(True)
+                sec_lbl.setFont(sec_bold)
+                sec_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                sec_lbl.setStyleSheet("background-color: #d0e8ff; padding: 2px;")
+                self._fields_grid.addWidget(sec_lbl, row_idx, 0, 1, 5)
                 row_idx += 1
+
             for field in fields:
                 fr = FieldRow(
-                    self._fields_frame, row_idx, field,
+                    self._fields_grid, row_idx, field,
                     on_change=self._assemble,
-                    mono=MONO_SM,
+                    mono_font=self._mono_font,
+                    mono_sm_font=self._mono_sm_font,
                 )
                 self._field_rows.append(fr)
                 row_idx += 1
@@ -434,7 +459,7 @@ class Mu2eSender(tk.Tk):
 
         size = buf_size_for_format(fmt)
         buf = bytearray(size)
-        le = self.little_endian.get()
+        le = self._little_endian
 
         # Collect all fields in definition order (mirrors _load_format)
         all_fields: list[dict] = []
@@ -457,9 +482,7 @@ class Mu2eSender(tk.Tk):
             set_bits(buf, int(field_def.get("word", 0)),
                      str(field_def.get("bits", "15:0")), val, le)
 
-        # Display
-        hex_str = " ".join(f"{b:02X}" for b in buf)
-        # Group into 16-byte rows for readability
+        # Display: offset-labelled rows of 16 bytes
         lines = []
         for i in range(0, len(buf), 16):
             offset_label = f"{i:04X}:  "
@@ -468,16 +491,19 @@ class Mu2eSender(tk.Tk):
             lines.append(offset_label + hex_part)
         display = "\n".join(lines)
 
-        self.bytes_text.config(state=tk.NORMAL)
-        self.bytes_text.delete("1.0", tk.END)
-        self.bytes_text.insert("1.0", display)
-        self.bytes_text.config(state=tk.DISABLED,
-                               foreground="red" if error else "black")
-
+        self.bytes_text.setPlainText(display)
         if error:
-            self.status_var.set("Input error — check field values")
+            self.bytes_text.setStyleSheet(
+                "background-color: #f8f8f8; color: red;"
+            )
+            self._status_label.setText("Input error \u2014 check field values")
+            self._status_label.setStyleSheet("color: red;")
         else:
-            self.status_var.set(f"Assembled  {len(buf)} bytes")
+            self.bytes_text.setStyleSheet(
+                "background-color: #f8f8f8; color: black;"
+            )
+            self._status_label.setText(f"Assembled  {len(buf)} bytes")
+            self._status_label.setStyleSheet("color: gray;")
 
         return None if error else buf
 
@@ -488,36 +514,33 @@ class Mu2eSender(tk.Tk):
     def _send(self):
         buf = self._assemble()
         if buf is None:
-            messagebox.showerror("Send error", "Cannot send — fix field value errors first.")
+            QMessageBox.critical(
+                self, "Send error",
+                "Cannot send \u2014 fix field value errors first."
+            )
             return
 
-        host = self.host_var.get().strip()
+        host = self.host_edit.text().strip()
         try:
-            port = int(self.port_var.get().strip())
+            port = int(self.port_edit.text().strip())
         except ValueError:
-            messagebox.showerror("Send error", "Invalid port number.")
+            QMessageBox.critical(self, "Send error", "Invalid port number.")
             return
 
         try:
             with socket.create_connection((host, port), timeout=5) as sock:
                 sock.sendall(bytes(buf))
-            self.status_var.set(
+            self._status_label.setText(
                 f"Sent {len(buf)} bytes to {host}:{port}"
             )
+            self._status_label.setStyleSheet("color: gray;")
         except OSError as exc:
-            messagebox.showerror("Send error",
-                                 f"Could not connect to {host}:{port}\n\n{exc}")
-            self.status_var.set("Send failed")
-
-
-# ---------------------------------------------------------------------------
-# Helper
-# ---------------------------------------------------------------------------
-
-def _sep(parent):
-    ttk.Separator(parent, orient=tk.VERTICAL).pack(
-        side=tk.LEFT, fill=tk.Y, padx=6, pady=2
-    )
+            QMessageBox.critical(
+                self, "Send error",
+                f"Could not connect to {host}:{port}\n\n{exc}"
+            )
+            self._status_label.setText("Send failed")
+            self._status_label.setStyleSheet("color: red;")
 
 
 # ---------------------------------------------------------------------------
@@ -526,5 +549,8 @@ def _sep(parent):
 
 if __name__ == "__main__":
     yaml_directory = sys.argv[1] if len(sys.argv) > 1 else YAML_DIR
-    app = Mu2eSender(yaml_directory)
-    app.mainloop()
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    window = Mu2eSender(yaml_directory)
+    window.show()
+    sys.exit(app.exec())
