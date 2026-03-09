@@ -3,7 +3,7 @@
 
 # Directory containing the packet-format *.yaml files.
 # Relative paths are resolved relative to this config file.
-formats_dir: "."
+formats_dir: "../formats"
 
 # Packet format selected on startup.
 # Must match a format name exactly (e.g. "Heartbeat Packet").

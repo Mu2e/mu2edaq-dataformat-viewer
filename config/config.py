@@ -42,8 +42,12 @@ DEFAULTS: dict = {
     "qt_style":  "Fusion",      # Qt style name: Fusion, Windows, macOS, …
 }
 
-# Standard config file names searched when no explicit path is given
+# Config file names searched in each candidate directory
 _SEARCH_NAMES = ("mu2e-viewer.yaml", "config.yaml")
+
+# Directories searched (relative to cwd) when no explicit path is given,
+# in priority order: current directory first, then ./config/
+_SEARCH_DIRS = (Path("."), Path("config"))
 
 
 # ── Public API ─────────────────────────────────────────────────────────────
@@ -53,13 +57,16 @@ def load(config_path: str | None = None, script_dir: str | None = None) -> dict:
     Load and return a configuration dict.
 
     *config_path*
-        Path to a YAML config file.  If *None*, the loader searches for
-        ``mu2e-viewer.yaml`` then ``config.yaml`` in *script_dir*.
+        Path to a YAML config file.  If *None*, the loader searches the
+        following locations in order until a file is found:
+          1. ./<name>          (current working directory)
+          2. ./config/<name>   (config sub-directory of cwd)
+        where <name> is tried as ``mu2e-viewer.yaml`` then ``config.yaml``.
 
     *script_dir*
-        Directory used as the base for both the config file search and
-        for resolving relative ``formats_dir`` paths.  Defaults to the
-        directory that contains this module.
+        Fallback base directory used to resolve a relative ``formats_dir``
+        when no config file is found.  Defaults to the directory that
+        contains this module.
     """
     if script_dir is None:
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -73,10 +80,13 @@ def load(config_path: str | None = None, script_dir: str | None = None) -> dict:
         if not resolved_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
     else:
-        for name in _SEARCH_NAMES:
-            candidate = Path(script_dir) / name
-            if candidate.exists():
-                resolved_path = candidate
+        for search_dir in _SEARCH_DIRS:
+            for name in _SEARCH_NAMES:
+                candidate = search_dir / name
+                if candidate.exists():
+                    resolved_path = candidate
+                    break
+            if resolved_path:
                 break
 
     # Load and merge user values
