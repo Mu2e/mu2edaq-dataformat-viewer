@@ -25,14 +25,15 @@ try:
         QGroupBox, QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QTextEdit,
         QToolBar, QLabel, QComboBox, QRadioButton, QButtonGroup, QCheckBox,
         QPushButton, QSpinBox, QLineEdit, QFileDialog, QMessageBox,
-        QVBoxLayout, QHBoxLayout, QSizePolicy,
+        QVBoxLayout, QHBoxLayout, QSizePolicy, QMenu,
     )
     from PyQt6.QtCore import (
         Qt, QObject, pyqtSignal, QTimer, QMetaObject, Q_ARG,
     )
     from PyQt6.QtGui import (
-        QFont, QColor, QBrush, QTextCharFormat, QTextCursor,
+        QFont, QColor, QBrush, QTextCharFormat, QTextCursor, QActionGroup,
     )
+    from PyQt6.QtWidgets import QStyleFactory
 except ImportError:
     print("PyQt6 is required.  Install with:  pip install PyQt6")
     sys.exit(1)
@@ -208,8 +209,28 @@ class Mu2eViewer(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
+        self._build_menu()
         self._build_toolbar()
         self._build_central()
+
+    def _build_menu(self):
+        menu_bar = self.menuBar()
+
+        # ── View menu ─────────────────────────────────────────────────
+        view_menu = menu_bar.addMenu("View")
+
+        style_menu = view_menu.addMenu("Style")
+        style_group = QActionGroup(self)
+        style_group.setExclusive(True)
+        current_style = QApplication.instance().style().objectName().lower()
+        for name in sorted(QStyleFactory.keys()):
+            action = style_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name.lower() == current_style)
+            style_group.addAction(action)
+            action.triggered.connect(
+                lambda checked, s=name: QApplication.instance().setStyle(s)
+            )
 
     def _build_toolbar(self):
         bar = self.addToolBar("Main")
@@ -355,11 +376,14 @@ class Mu2eViewer(QMainWindow):
             ["Field Name", "Word", "Bits", "Hex", "Binary", "Dec", "Decoded / Description"]
         )
 
-        # Right-align all column headers
+        # Right-align all column headers except the last (Decoded / Description)
         header = self.tree.header()
         header.setFont(self._f(-1))
         header.setDefaultAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
+        self.tree.headerItem().setTextAlignment(
+            6, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
 
         # Column widths
@@ -550,6 +574,7 @@ class Mu2eViewer(QMainWindow):
         brush_grey_fg = QBrush(QColor("#888888"))
 
         align_right = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        align_left  = Qt.AlignmentFlag.AlignLeft  | Qt.AlignmentFlag.AlignVCenter
         bold_font   = self._f(-1, bold=True)
         normal_font = self._f(-1)
 
@@ -559,7 +584,7 @@ class Mu2eViewer(QMainWindow):
                 sec_item.setText(0, f"  {section_label}")
                 sec_item.setFont(0, bold_font)
                 for col in range(7):
-                    sec_item.setTextAlignment(col, align_right)
+                    sec_item.setTextAlignment(col, align_left if col == 6 else align_right)
                     sec_item.setBackground(col, brush_blue)
                     sec_item.setFont(col, bold_font)
 
@@ -599,7 +624,7 @@ class Mu2eViewer(QMainWindow):
                 row_item.setText(6, decoded)
 
                 for col in range(7):
-                    row_item.setTextAlignment(col, align_right)
+                    row_item.setTextAlignment(col, align_left if col == 6 else align_right)
                     row_item.setFont(col, normal_font)
 
                 # Apply row colouring

@@ -24,9 +24,10 @@ try:
         QGroupBox, QTextEdit, QToolBar, QLabel, QComboBox, QCheckBox,
         QPushButton, QLineEdit, QMessageBox,
         QScrollArea, QGridLayout, QVBoxLayout, QSizePolicy,
+        QMenu, QStyleFactory,
     )
     from PyQt6.QtCore import Qt
-    from PyQt6.QtGui import QFont
+    from PyQt6.QtGui import QFont, QActionGroup
 except ImportError:
     print("PyQt6 is required.  Install with:  pip install PyQt6")
     sys.exit(1)
@@ -280,8 +281,28 @@ class Mu2eSender(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_ui(self):
+        self._build_menu()
         self._build_toolbar()
         self._build_central()
+
+    def _build_menu(self):
+        menu_bar = self.menuBar()
+
+        # ── View menu ─────────────────────────────────────────────────
+        view_menu = menu_bar.addMenu("View")
+
+        style_menu = view_menu.addMenu("Style")
+        style_group = QActionGroup(self)
+        style_group.setExclusive(True)
+        current_style = QApplication.instance().style().objectName().lower()
+        for name in sorted(QStyleFactory.keys()):
+            action = style_menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name.lower() == current_style)
+            style_group.addAction(action)
+            action.triggered.connect(
+                lambda checked, s=name: QApplication.instance().setStyle(s)
+            )
 
     def _build_toolbar(self):
         bar = self.addToolBar("Main")
