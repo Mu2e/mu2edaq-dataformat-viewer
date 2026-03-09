@@ -4,79 +4,159 @@
 
 - Python 3.10 or later
 - PyYAML (`pip install pyyaml`)
-- Tkinter (included with most Python distributions)
+- PyQt6 (`pip install PyQt6`)
 
-## Starting the application
+Install all dependencies at once:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Directory layout
+
+```
+mu2edaq-dataformat-viewer/
+├── viewer.py            # Data format viewer application
+├── sender.py            # Packet construction and sending application
+├── config/
+│   ├── config.py        # Configuration loader module
+│   └── mu2e-viewer.yaml # Default configuration file
+├── formats/             # Packet format YAML definitions (21 files)
+├── test/                # Test data files
+│   ├── test.dat         # 16-byte Heartbeat Packet sample
+│   └── test2.dat        # 2048 bytes of random data
+├── doc/
+│   └── mu2e-dataformat.pdf  # Source format specification
+├── requirements.txt
+└── USAGE.md
+```
+
+---
+
+## Starting the applications
+
+### Viewer
 
 ```bash
 cd /path/to/mu2edaq-dataformat-viewer
 python3 viewer.py
 ```
 
-By default the viewer looks for YAML format files in the same directory as
-`viewer.py`.  To point it at a different directory, pass the path as an
-argument:
+### Sender
 
 ```bash
-python3 viewer.py /path/to/yaml/formats/
+python3 sender.py
 ```
+
+### Command-line options (both applications)
+
+```
+python3 viewer.py [--config FILE] [formats_dir]
+python3 sender.py [--config FILE] [formats_dir]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--config FILE` | Path to a YAML configuration file |
+| `formats_dir` | Directory containing format YAML files (overrides config) |
 
 ---
 
-## Overview of the interface
+## Configuration file
 
+Both applications read a YAML configuration file on startup.  The file is
+searched in the following locations (first match wins):
+
+1. `./mu2e-viewer.yaml`
+2. `./config.yaml`
+3. `./config/mu2e-viewer.yaml`
+4. `./config/config.yaml`
+
+An explicit `--config /path/to/file.yaml` always takes precedence.
+
+### All configuration options
+
+```yaml
+# Directory containing the packet-format *.yaml files.
+# Relative paths are resolved relative to this config file.
+formats_dir: "../formats"
+
+# Packet format selected on startup.
+# Must match a format name exactly (e.g. "Heartbeat Packet").
+# Leave empty to select the first format alphabetically.
+default_format: ""
+
+# Viewer settings
+viewer:
+  port: 7755          # TCP port the viewer listens on for incoming data
+
+# Sender settings
+sender:
+  host: localhost     # Default destination host
+  port: 7755          # Default destination port
+
+# Appearance
+font_size: 11         # Base font size in points (range 7–24)
+qt_style:  Fusion     # Qt style: Fusion | Windows | macOS
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Toolbar                                                    │
-├─────────────────────────────────────────────────────────────┤
-│  Raw bytes  (hex input)                                     │
-├─────────────────────────────────────────────────────────────┤
-│  Field breakdown  (table)                                   │
-├─────────────────────────────────────────────────────────────┤
-│  Field detail  (description panel)                          │
-└─────────────────────────────────────────────────────────────┘
-```
+
+### Loading and saving config at runtime
+
+Both applications have a **File** menu with:
+
+- **Load config…** — opens a file picker, loads a YAML config file, and
+  applies all settings to the running UI immediately (formats directory,
+  default format, connection ports, font size, Qt style).
+- **Save config…** — captures the current UI state and writes it to a YAML
+  file of your choice, preserving any in-session changes for next time.
 
 ---
 
-## Toolbar controls
+## Viewer interface
 
-### Packet format
-Select the packet type from the drop-down list.  All 20 packet formats defined
-in the YAML files are available.  Changing the selection immediately re-parses
-the current byte data against the new format.
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Menu bar:  File  |  View                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Toolbar                                                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Raw bytes  (hex input)                                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Field breakdown  (table)                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Field detail  (description panel)                              │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-Use **Auto-detect type** to let the viewer read bits [7:4] of word 1 and
-select the matching format automatically.  This works for all standard ROC
-packet types.
+### Toolbar controls
 
-### Values display mode
-Choose how field values are shown in the breakdown table:
+| Control | Description |
+|---------|-------------|
+| **Packet format** | Drop-down list of all available packet formats.  Changing the selection immediately re-parses the current byte data. |
+| **Values: Hex / Binary / Decimal** | Controls the display mode for all value columns in the breakdown table.  All three columns (hex, binary, decimal) are always visible. |
+| **Little-endian words** | When checked, each 16-bit word is read low-byte-first.  Leave unchecked (default) for standard big-endian Mu2e packets. |
+| **Load file…** | Load a binary file (`.bin`, `.dat`, `.raw`) as the input data. |
+| **Auto-detect type** | Reads bits [7:4] of word 1 and selects the matching packet format automatically. |
+| **Clear** | Removes all byte data and resets the table. |
+| **Offset (bytes)** | Byte offset into the raw data at which decoding begins.  The 16-bit word at the offset is highlighted in red in the hex input panel.  Can also be set by clicking any byte in the hex panel. |
+| **TCP port / Start listening** | Listens on the given port for incoming raw byte data from an external application.  Click again to stop. |
+| **Font: A- / size / A+** | Decrease or increase the base font size (range 7–24 pt). |
 
-| Mode | Example |
-|------|---------|
-| Hex | `0x5A` |
-| Binary | `01011010` |
-| Decimal | `90` |
+### View menu
 
-All three columns (hex, binary, decimal) are always visible in the table
-regardless of this setting; the mode controls which column is highlighted /
-wide by default.
-
-### Little-endian words
-When checked, each 16-bit word is read in little-endian byte order (low byte
-first).  Leave unchecked (default) for standard big-endian Mu2e packets.
-
-### Clear
-Removes all byte data and resets the table.
+**View → Style** lists all available Qt styles (Fusion, Windows, macOS, …).
+The active style has a checkmark.  Selecting a style applies it immediately.
 
 ---
 
-## Loading data
+## Loading data into the viewer
 
 ### Paste hex bytes
+
 Click in the **Raw bytes** panel and type or paste hex values.  The viewer
-re-parses automatically after each keystroke.
+re-parses automatically on each keystroke.
 
 Accepted formats — all of the following are equivalent:
 
@@ -88,19 +168,25 @@ Accepted formats — all of the following are equivalent:
 
 Spaces, `0x` prefixes, and newlines are all ignored.
 
+### Click to set decode offset
+
+Click any hex byte token in the **Raw bytes** panel to set the decode offset
+to that byte position.  The spinbox updates to match, and the two bytes
+forming the 16-bit word at that position are highlighted in red.
+
 ### Load a binary file
-Click **Load file…** and select any `.bin`, `.dat`, or `.raw` file.  The
-raw bytes are read and displayed as hex in the input panel, then parsed
-against the currently selected format.
+
+Click **Load file…** and select a binary file.  The raw bytes are displayed
+as hex and parsed against the currently selected format.
 
 ### Receive data over TCP
-An external application can push byte arrays directly to the viewer over a
-TCP connection.
 
-1. Set the **TCP port** field to the desired port number (default `7755`).
-2. Click **Start listening**.  The status bar confirms the viewer is listening.
+An external application can push byte arrays directly to the viewer over TCP.
+
+1. Set the **TCP port** field (default `7755`).
+2. Click **Start listening**.
 3. The sending application connects, sends the raw bytes, and closes the
-   connection.  The viewer automatically displays the received packet.
+   connection.  The viewer displays and auto-detects the received packet.
 4. Click **Stop listening** when done.
 
 **Example sender (Python):**
@@ -137,9 +223,6 @@ send(fd, pkt, sizeof(pkt), 0);
 close(fd);
 ```
 
-After receiving the data the viewer also runs auto-detect and selects the
-appropriate packet format if the type is recognised.
-
 ---
 
 ## Reading the field breakdown table
@@ -154,24 +237,22 @@ Each row represents one field defined in the YAML format file.
 | **Hex** | Extracted field value in hexadecimal |
 | **Binary** | Extracted field value in binary |
 | **Dec** | Extracted field value in decimal |
-| **Decoded / Description** | Human-readable meaning if the field has defined enumerated values; error message if a fixed-value field does not match its expected value |
+| **Decoded / Description** | Human-readable meaning for enumerated fields; error message if a fixed-value field does not match its expected value |
 
 ### Row colour coding
 
 | Colour | Meaning |
 |--------|---------|
 | White | Normal field |
-| **Green** | Fixed-value field — value matches the expected constant (e.g. Packet Type) |
-| **Red** | Fixed-value field — value does **not** match the expected constant; likely a corrupt or misidentified packet |
-| **Grey text** | Reserved field — value should be zero but is not checked |
-
-Packets with multiple sub-sections (e.g. Tracker Data Packet which spans two
-16-byte payload packets) display a blue section header row between the two
-halves.
+| Green | Fixed-value field — value matches the expected constant (e.g. Packet Type) |
+| Red background | Fixed-value field mismatch — likely a corrupt or misidentified packet |
+| Blue background | Section header row (multi-packet formats such as Tracker) |
+| Grey text | Reserved field |
 
 ### Field detail panel
-Click any row to see the full field description in the **Field detail** panel
-at the bottom, including:
+
+Click any row to see the full field description in the **Field detail** panel,
+including:
 
 - Byte offset within the packet
 - Value in all three formats (hex, binary, decimal)
@@ -179,6 +260,59 @@ at the bottom, including:
 - Full description from the format specification
 - Complete enumeration table (all defined values and their meanings)
 - Any subfields defined within this field
+
+---
+
+## Sender interface
+
+The sender lets you construct a packet field-by-field and transmit it to the
+viewer over TCP.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Menu bar:  File  |  View                                       │
+├─────────────────────────────────────────────────────────────────┤
+│  Toolbar                                                        │
+├─────────────────────────────────────────────────────────────────┤
+│  Packet fields  (scrollable grid)                               │
+├─────────────────────────────────────────────────────────────────┤
+│  Assembled bytes  (live hex dump)                               │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Toolbar controls
+
+| Control | Description |
+|---------|-------------|
+| **Packet format** | Selects the packet type; rebuilds the field grid immediately. |
+| **Little-endian words** | Matches the viewer's endian toggle. |
+| **Viewer host / port** | Destination for the **Send to viewer** action. |
+| **Send to viewer** | Assembles the packet bytes and sends them to the viewer over TCP. |
+| **Reset fields** | Restores all field values to their defaults for the current format. |
+| **Font: A- / size / A+** | Adjust base font size. |
+
+### Packet fields grid
+
+Each row in the scrollable grid corresponds to one packet field:
+
+| Column | Content |
+|--------|---------|
+| Field Name | Name from the YAML definition |
+| Word | 16-bit word index |
+| Bits | Bit range within the word |
+| Value | Free-entry box (hex `0x1A` or decimal), or a drop-down for enumerated fields |
+| Description | Abbreviated description from the YAML definition |
+
+- Fields with a `fixed_value` are pre-filled and locked (e.g. Packet Type).
+- Enumerated fields show a drop-down of all valid options with their meanings.
+- Reserved fields are shown in grey.
+- Multi-section packets display a blue section divider row.
+
+### Assembled bytes panel
+
+Shows a live hex dump of the current packet, updated after every field change.
+Bytes are displayed in rows of 16 with a byte-offset label on the left.
+The panel turns red if any field contains an invalid value.
 
 ---
 
@@ -211,11 +345,11 @@ at the bottom, including:
 
 ## Adding or modifying packet formats
 
-Each packet type is described by a YAML file in the same directory as
-`viewer.py`.  To add a new format or correct an existing one, edit the
-corresponding `.yaml` file and restart the viewer.
+Each packet type is described by a YAML file in the `formats/` directory.
+To add a new format or correct an existing one, edit the corresponding `.yaml`
+file and restart the application (or use **File → Load config…** to reload).
 
-The required YAML structure for each field is:
+The required YAML structure for each field:
 
 ```yaml
 name: My Packet
@@ -246,9 +380,9 @@ fields:
       2: "Error"
 ```
 
-Formats with multiple payload packets (e.g. tracker hits spanning two
-16-byte packets) can use `packet_1` and `packet_2` sub-sections instead
-of a top-level `fields` list.
+Formats with multiple payload packets (e.g. tracker hits spanning two 16-byte
+packets) use `packet_1` and `packet_2` sub-sections instead of a top-level
+`fields` list.
 
 ---
 
