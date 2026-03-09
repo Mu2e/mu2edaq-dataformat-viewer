@@ -1,0 +1,100 @@
+name: Calorimeter Hit Debugging Data Packet
+description: >
+  Alternative calorimeter hit data packet formats used during the debug phase.
+  Two debug formats are defined:
+    1. "debugADCsV01" - an alternative hit format for collecting ADC data during
+       debugging, differing from the standard hit format in its header structure.
+    2. "debugCountersV01" - a sequential counter format for debugging data flow.
+
+  These are Data Payload Packets (packet type 0x6) with a different payload
+  layout than the standard Calo Hit Data Packet.
+subsystem_id: 0x1
+subsystem_name: Calorimeter
+packet_type: 0x6
+debug_mode: true
+
+formats:
+  - name: debugADCsV01
+    description: >
+      Alternative calorimeter hit data format for ADC data collection during
+      debug. The header structure differs from the standard hit format: the
+      first word uses a fixed 0xAAA magic value in the top 12 bits, followed
+      by Board ID split across two words, then Channel ID and In-Payload Event
+      Window Tag.
+
+    fields:
+      - name: Magic Value
+        bits: "15:4"
+        word: 0
+        size_bits: 12
+        description: >
+          Fixed 12-bit magic value 0xAAA used to identify this debug format.
+        fixed_value: 0xAAA
+
+      - name: Board ID (high 4 bits)
+        bits: "3:0"
+        word: 0
+        size_bits: 4
+        description: High 4 bits of the 12-bit Board ID.
+
+      - name: Board ID (low 8 bits)
+        bits: "15:8"
+        word: 1
+        size_bits: 8
+        description: Low 8 bits of the 12-bit Board ID (range 0 to 255 for 8-bit, or extended).
+
+      - name: Channel ID (high 8 bits)
+        bits: "7:0"
+        word: 1
+        size_bits: 8
+        description: High 8 bits of the Channel ID.
+
+      - name: Channel ID (low 4 bits)
+        bits: "15:12"
+        word: 2
+        size_bits: 4
+        description: Low 4 bits of the Channel ID.
+
+      - name: In Payload Event Window Tag
+        bits: "11:0"
+        word: 2
+        size_bits: 12
+        description: >
+          12-bit in-payload Event Window Tag embedded within the debug hit header.
+
+      - name: ADC Samples (variable)
+        description: >
+          Following the 3-word header, ADC samples continue in the same 12-bit
+          packed format as the standard Calo Hit Data Packet:
+          4 samples fit into 3 x 16-bit words.
+          Samples continue until the Last Sample Marker (0xFFF) is found,
+          followed by the same 5 x 12-bit hit trailer words as in the
+          standard format (Error Flag, Time high, Time low, Index of Max
+          Sample, Number of Samples).
+        sample_size_bits: 12
+        packing: "4 samples per 3 words (12-bit tightly packed)"
+        sentinel: 0xFFF
+
+  - name: debugCountersV01
+    description: >
+      Sequential counter format for debugging data flow in the calorimeter
+      readout chain. Contains pairs of 16-bit words forming 32-bit sequential
+      counters. The number of counter pairs is variable and fills the available
+      payload space.
+
+    fields:
+      - name: Sequential Counter n (high 16 bits)
+        size_bits: 16
+        description: >
+          High 16 bits of the nth 32-bit sequential counter. Counters are
+          numbered starting from 0.
+
+      - name: Sequential Counter n (low 16 bits)
+        size_bits: 16
+        description: >
+          Low 16 bits of the nth 32-bit sequential counter.
+
+    notes: >
+      Counter pairs repeat for as many counters as fit in the event payload.
+      The layout is: Counter 0 high, Counter 0 low, Counter 1 high,
+      Counter 1 low, ..., Counter n high, Counter n low.

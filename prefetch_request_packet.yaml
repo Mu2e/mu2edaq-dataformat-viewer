@@ -1,0 +1,121 @@
+name: Prefetch Request Packet
+description: >
+  Informational packet sent from the DTC to the ROC on DMA channel 0. Similar
+  in format to the Data Request Packet but does NOT trigger a response from
+  front-ends. Gives front-ends an opportunity to prefetch event window data
+  based on the Event Window Tag in order to lower latency for the corresponding
+  Data Request Packet that may follow.
+packet_type: 0x3
+size_bytes: 16
+dma_channel: 0
+serial_header:
+  description: >
+    2-byte hardware-generated serial header (K28.0 + D3.y) prepended on
+    transmission and stripped on receipt. 'y' is the packet sequence number
+    (0-7, incrementing, wrapping).
+  k_char: K28.0
+  d_char: D3.y
+
+fields:
+  - name: Transfer Byte Count
+    bits: "15:0"
+    word: 0
+    size_bits: 16
+    description: >
+      16-bit transfer byte count (high byte in bits 15:8, low byte in bits 7:0).
+      Used by the DTC DMA engine.
+
+  - name: Valid
+    bits: "15"
+    word: 1
+    size_bits: 1
+    description: Valid flag. Used by the DTC DMA engine.
+
+  - name: Reserved
+    bits: "14:11"
+    word: 1
+    size_bits: 4
+    description: Reserved bits, should be zero.
+
+  - name: ROC Link ID
+    bits: "10:8"
+    word: 1
+    size_bits: 3
+    description: >
+      Specifies the link on the parent DTC that the target ROC is located on.
+      The DTC's six optical links are numbered 0 through 5.
+
+  - name: Packet Type
+    bits: "7:4"
+    word: 1
+    size_bits: 4
+    description: Packet type identifier. Always 0x3 for a Prefetch Request Packet.
+    fixed_value: 0x3
+
+  - name: Reserved (low nibble)
+    bits: "3:0"
+    word: 1
+    size_bits: 4
+    description: Reserved bits, should be zero.
+
+  - name: Event Window Tag byte 1
+    bits: "15:8"
+    word: 2
+    size_bits: 8
+    description: Byte 1 of the 48-bit Event Window Tag.
+
+  - name: Event Window Tag byte 0
+    bits: "7:0"
+    word: 2
+    size_bits: 8
+    description: Byte 0 (least significant byte) of the 48-bit Event Window Tag.
+
+  - name: Event Window Tag byte 3
+    bits: "15:8"
+    word: 3
+    size_bits: 8
+    description: Byte 3 of the 48-bit Event Window Tag.
+
+  - name: Event Window Tag byte 2
+    bits: "7:0"
+    word: 3
+    size_bits: 8
+    description: Byte 2 of the 48-bit Event Window Tag.
+
+  - name: Event Window Tag byte 5
+    bits: "15:8"
+    word: 4
+    size_bits: 8
+    description: Byte 5 (most significant byte) of the 48-bit Event Window Tag.
+
+  - name: Event Window Tag byte 4
+    bits: "7:0"
+    word: 4
+    size_bits: 8
+    description: Byte 4 of the 48-bit Event Window Tag.
+
+  - name: Reserved (word 5)
+    bits: "15:0"
+    word: 5
+    size_bits: 16
+    description: Reserved word, should be zero.
+
+  - name: Reserved (word 6)
+    bits: "15:0"
+    word: 6
+    size_bits: 16
+    description: Reserved word, should be zero.
+
+  - name: Reserved (word 7)
+    bits: "15:0"
+    word: 7
+    size_bits: 16
+    description: Reserved word, should be zero.
+
+  - name: CRC
+    bits: "15:0"
+    word: 8
+    size_bits: 16
+    description: >
+      16-bit CRC for error detection. High byte in word 8 bits [15:8],
+      low byte in word 8 bits [7:0].

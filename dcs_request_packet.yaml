@@ -1,0 +1,171 @@
+name: DCS Request Packet
+description: >
+  Detector Control System (DCS) Request packet sent from the DTC to the ROC
+  on DMA channel 1. DCS packets have priority over Data packets. Supports
+  single Read, single Write, Block Read, Block Write, Double Read, and Double
+  Write operations. The ROC can ignore the DMA Byte Count and Valid fields,
+  which are used by the DTC DMA engine.
+packet_type: 0x0
+size_bytes: 16
+dma_channel: 1
+serial_header:
+  description: >
+    2-byte hardware-generated serial header (K28.0 + D0.y) prepended to the
+    packet on transmission and stripped on receipt. The 'y' field (bits 2:0 of
+    the Dx byte) is the packet sequence number (0-7, incrementing, wrapping).
+  k_char: K28.0
+  d_char: D0.y
+
+fields:
+  - name: DMA Byte Count
+    bits: "15:0"
+    word: 0
+    size_bits: 16
+    description: >
+      16-bit DMA byte count (high byte in bits 15:8, low byte in bits 7:0).
+      Used by the DTC DMA engine. The ROC can ignore this field.
+
+  - name: Valid
+    bits: "15"
+    word: 1
+    size_bits: 1
+    description: >
+      Valid flag. Used by the DTC DMA engine. The ROC can ignore this field.
+
+  - name: Reserved
+    bits: "14:11"
+    word: 1
+    size_bits: 4
+    description: Reserved bits, should be zero.
+
+  - name: ROC Link ID
+    bits: "10:8"
+    word: 1
+    size_bits: 3
+    description: >
+      Specifies the link on the parent DTC that the target ROC is located on.
+      The DTC's six optical links are numbered 0 through 5.
+
+  - name: Packet Type
+    bits: "7:4"
+    word: 1
+    size_bits: 4
+    description: Packet type identifier. Always 0x0 for a DCS Request Packet.
+    fixed_value: 0x0
+
+  - name: Hop Count
+    bits: "3:0"
+    word: 1
+    size_bits: 4
+    description: >
+      4-bit hop count specifying which ROC on a ring the packet is addressed to.
+
+  - name: Block Op Additional Packet Count
+    bits: "15:6"
+    word: 2
+    size_bits: 10
+    description: >
+      For Block Write operations: number of DCS Additional Block Write Payload
+      packets (16-byte packets) associated with the operation. Should be
+      non-zero for Block Write requests if Block Op Word Count is greater than 3.
+
+  - name: Reserved (word 2)
+    bits: "5"
+    word: 2
+    size_bits: 1
+    description: Reserved bit, should be zero.
+
+  - name: Op Code
+    bits: "4:0"
+    word: 2
+    size_bits: 5
+    description: >
+      5-bit field specifying the DCS request type. Bits [2:0] select the
+      operation type. Bit [3] is the Request Acknowledgement flag. Bit [4]
+      is the Increment Address flag.
+    subfields:
+      - name: Operation Type
+        bits: "2:0"
+        size_bits: 3
+        values:
+          0x0: "Read - single register read"
+          0x1: "Write - single register write"
+          0x2: "Block Read - read multiple registers"
+          0x3: "Block Write - write multiple registers"
+          0x4: "Double Read - two reads in one packet (not supported by Tracker/Calorimeter)"
+          0x5: "Double Write - two writes in one packet (not supported by Tracker/Calorimeter)"
+      - name: Request Acknowledgement
+        bits: "3"
+        size_bits: 1
+        description: >
+          For Write, Double Write, and Block Write: when set (1), the ROC
+          shall respond with an acknowledgement DCS Reply Packet AFTER
+          completing the write action. The ack packet mirrors Op Code,
+          Block Op Packet Count, Op1 Address/Data, and Op2 Address/Data.
+          Only one Reply packet should be sent for Block Write (do not mirror
+          Additional Block Write Payload packets).
+        values:
+          0: "No acknowledgement requested"
+          1: "Acknowledgement requested after write completion"
+      - name: Increment Address
+        bits: "4"
+        size_bits: 1
+        description: >
+          For Block Read and Block Write: when set (1), the address is
+          incremented for each word in the operation. When clear (0),
+          the same address is used for all words (e.g., for FIFO access).
+        values:
+          0: "Do not increment address (e.g., FIFO access)"
+          1: "Increment address for each word in the block operation"
+
+  - name: Op1 Address
+    bits: "15:0"
+    word: 3
+    size_bits: 16
+    description: >
+      Address for operation 1 (single Read/Write or first of Double op).
+      For Block operations, this is the starting address.
+
+  - name: Op1 Write Data / Block Op Word Count
+    bits: "15:0"
+    word: 4
+    size_bits: 16
+    description: >
+      For Write and Double Write: write data for operation 1.
+      For Block Read and Block Write: the number of 16-bit words associated
+      with the operation (can be non-zero for both Block Write and Block Read
+      requests).
+      For Read operations, this field is ignored.
+
+  - name: Op2 Address / Block Write Data0
+    bits: "15:0"
+    word: 5
+    size_bits: 16
+    description: >
+      For Double Read/Write: address for operation 2.
+      For Block Write: first word of block write data (Data0).
+
+  - name: Op2 Write Data / Block Write Data1
+    bits: "15:0"
+    word: 6
+    size_bits: 16
+    description: >
+      For Double Write: write data for operation 2.
+      For Block Write: second word of block write data (Data1).
+      For Read operations, this field is ignored.
+
+  - name: Reserved / Block Write Data2
+    bits: "15:0"
+    word: 7
+    size_bits: 16
+    description: >
+      Reserved for non-Block operations.
+      For Block Write: third word of block write data (Data2).
+
+  - name: CRC
+    bits: "15:0"
+    word: 8
+    size_bits: 16
+    description: >
+      16-bit CRC for error detection. High byte in word 8 bits [15:8],
+      low byte in word 8 bits [7:0].
