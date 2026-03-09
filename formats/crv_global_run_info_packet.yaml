@@ -1,0 +1,120 @@
+name: CRV Global Run Info Packet
+description: >
+  An additional 8-word (16-byte) info packet present in CRV data blocks when
+  using the Global Run firmware. This packet follows the CRV ROC Status Packet
+  and precedes the hit payload packets. It is NOT present in the default
+  (VST) firmware.
+
+  The packet begins with a fixed magic word (0xCAFE) and ends with a fixed
+  magic word (0xBEEF). It carries EWT (Event Window Tag) count, marker count,
+  last EWT, PLL status, injection window, injection time, and a CRC.
+
+  The number of hit payload packets following this info packet can be determined
+  from the Packet Count in the Data Header Packet, subtracting 2 (one for the
+  CRV ROC Status Packet and one for this Global Run Info Packet).
+subsystem_id: 0x2
+subsystem_name: CRV (Cosmic Ray Veto)
+packet_type: 0x6
+size_bytes: 16
+firmware_variant: global_run
+serial_header:
+  description: >
+    2-byte hardware-generated serial header (K28.0 + D6.y) prepended on
+    transmission and stripped on receipt.
+  k_char: K28.0
+  d_char: D6.y
+
+fields:
+  - name: Fixed Header Word (0xCAFE)
+    bits: "15:0"
+    word: 0
+    size_bits: 16
+    description: >
+      Fixed magic header word. Always 0xCAFE, used to identify this Global
+      Run Info Packet structure.
+    fixed_value: 0xCAFE
+
+  - name: EWT Count
+    bits: "15:0"
+    word: 1
+    size_bits: 16
+    description: >
+      16-bit Event Window Tag count. The number of event windows processed
+      since the start of the run or last reset.
+
+  - name: Marker Count
+    bits: "15:0"
+    word: 2
+    size_bits: 16
+    description: >
+      16-bit marker count. The number of timing markers received since the
+      start of the run or last reset.
+
+  - name: Last EWT
+    bits: "15:0"
+    word: 3
+    size_bits: 16
+    description: >
+      16-bit value representing the last Event Window Tag seen by this ROC.
+
+  - name: CRC
+    bits: "15:8"
+    word: 4
+    size_bits: 8
+    description: >
+      8-bit CRC of the info packet content.
+
+  - name: PLL
+    bits: "7:0"
+    word: 4
+    size_bits: 8
+    description: >
+      8-bit PLL (Phase-Locked Loop) status register value.
+
+  - name: Unused
+    bits: "15:13"
+    word: 5
+    size_bits: 3
+    description: Unused bits, should be zero.
+
+  - name: Lock
+    bits: "12"
+    word: 5
+    size_bits: 1
+    description: >
+      Single-bit PLL lock status flag.
+    values:
+      0: "PLL not locked"
+      1: "PLL locked"
+
+  - name: Injection Window
+    bits: "15:0"
+    word: 6
+    size_bits: 16
+    description: >
+      16-bit injection window parameter. Defines the time window for
+      calibration signal injection.
+
+  - name: Injection Time
+    bits: "15:0"
+    word: 7
+    size_bits: 16
+    description: >
+      16-bit injection time parameter. Defines the time of calibration
+      signal injection within the injection window.
+
+  - name: Fixed Footer Word (0xBEEF)
+    bits: "15:0"
+    word: 8
+    size_bits: 16
+    description: >
+      Fixed magic footer word. Always 0xBEEF, used to verify the integrity
+      of the Global Run Info Packet structure.
+    fixed_value: 0xBEEF
+
+notes: >
+  This packet is present ONLY in the Global Run firmware variant of the CRV ROC.
+  It is NOT present in the default (VST) firmware.
+  The packet count calculation for hit data packets:
+    hit_packet_count = Data Header Packet Count - 2
+  (subtracting 1 for the CRV ROC Status Packet and 1 for this packet).

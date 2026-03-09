@@ -1,0 +1,93 @@
+name: Data Payload Packet
+description: >
+  Generic Data Payload packet template sent from the ROC to the DTC on DMA
+  channel 0, following a Data Header Packet. Each packet carries 16 bytes
+  (8 16-bit words) of detector-specific payload data. The number of Data
+  Payload Packets for a given event window is specified by the Packet Count
+  field in the preceding Data Header Packet. The actual payload content
+  is defined per detector subsystem (Tracker, Calorimeter, CRV, STM, Debug).
+  See the subsystem-specific YAML files for payload definitions.
+packet_type: 0x6
+size_bytes: 16
+dma_channel: 0
+serial_header:
+  description: >
+    2-byte hardware-generated serial header (K28.0 + D6.y) prepended on
+    transmission and stripped on receipt. 'y' is the packet sequence number
+    (0-7, incrementing, wrapping).
+  k_char: K28.0
+  d_char: D6.y
+
+fields:
+  - name: Data Word 0
+    bits: "15:0"
+    word: 0
+    size_bits: 16
+    description: >
+      Payload data word 0. Content is subsystem-specific. See subsystem
+      packet definitions for details.
+
+  - name: Data Word 1
+    bits: "15:0"
+    word: 1
+    size_bits: 16
+    description: Payload data word 1. Content is subsystem-specific.
+
+  - name: Data Word 2
+    bits: "15:0"
+    word: 2
+    size_bits: 16
+    description: Payload data word 2. Content is subsystem-specific.
+
+  - name: Data Word 3
+    bits: "15:0"
+    word: 3
+    size_bits: 16
+    description: Payload data word 3. Content is subsystem-specific.
+
+  - name: Data Word 4
+    bits: "15:0"
+    word: 4
+    size_bits: 16
+    description: Payload data word 4. Content is subsystem-specific.
+
+  - name: Data Word 5
+    bits: "15:0"
+    word: 5
+    size_bits: 16
+    description: Payload data word 5. Content is subsystem-specific.
+
+  - name: Data Word 6
+    bits: "15:0"
+    word: 6
+    size_bits: 16
+    description: Payload data word 6. Content is subsystem-specific.
+
+  - name: Data Word 7
+    bits: "15:0"
+    word: 7
+    size_bits: 16
+    description: Payload data word 7. Content is subsystem-specific.
+
+  - name: CRC
+    bits: "15:0"
+    word: 8
+    size_bits: 16
+    description: >
+      16-bit CRC for error detection. High byte in word 8 bits [15:8],
+      low byte in word 8 bits [7:0].
+
+notes: >
+  The document labels the 16 bytes in each packet as Data 0 through Data 15,
+  where the low byte of each word is Data 0, 2, 4 ... 14 and the high byte
+  is Data 1, 3, 5 ... 15. For subsystem-specific payload layouts, see:
+    - tracker_data_packet.yaml
+    - calorimeter_hit_data_packet.yaml
+    - calorimeter_footer_packet.yaml
+    - crv_roc_status_packet.yaml
+    - crv_hit_data_packet.yaml
+    - crv_global_run_info_packet.yaml
+    - stm_trigger_header_packet.yaml
+    - stm_slice_header_packet.yaml
+    - debug_header_packet.yaml
+    - debug_data_packet.yaml

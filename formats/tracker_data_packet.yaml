@@ -1,0 +1,187 @@
+name: Tracker Data Packet
+description: >
+  Data payload for the Mu2e Tracker subsystem. Each hit from a straw tube
+  occupies exactly two 16-byte Data Payload Packets. The payload carries the
+  straw index, two TDC (time-to-digital converter) timestamps for the two ends
+  of the straw, two ToT (time-over-threshold) values, fifteen 12-bit ADC
+  samples packed tightly, and preprocessing flags filled in by DTC firmware.
+  The tracker straw index ranges from 0 to 23,039 (stored as 16 bits).
+  TDC values are 24-bit, ToT values are 8-bit, ADC samples are 12-bit each,
+  and 15 samples are read per hit (packed across both packets).
+subsystem_id: 0x0
+subsystem_name: Tracker
+packets_per_hit: 2
+packet_type: 0x6
+size_bytes_per_hit: 32
+
+packet_1:
+  description: First of two Data Payload Packets per tracker hit (words 0-7 of the hit payload).
+  serial_header:
+    k_char: K28.0
+    d_char: D6.y
+  fields:
+    - name: Straw Index
+      bits: "15:0"
+      word: 0
+      size_bits: 16
+      description: >
+        Unique identifier of the straw tube that produced this hit.
+        Range: 0 to 23,039. Stored in 16 bits.
+
+    - name: First TDC Value (high 16 bits)
+      bits: "15:0"
+      word: 1
+      size_bits: 16
+      description: >
+        High 16 bits of the 24-bit TDC (time-to-digital converter) value for
+        the first end of the straw. The TDC value gives the pulse arrival time.
+
+    - name: First TDC Value (low 8 bits) + First ToT Value
+      bits: "15:0"
+      word: 2
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of the 24-bit First TDC value.
+        Bits [7:0]: First ToT (time-over-threshold) value (8 bits), giving
+        the pulse duration at the first end of the straw.
+
+    - name: Second TDC Value (high 16 bits)
+      bits: "15:0"
+      word: 3
+      size_bits: 16
+      description: >
+        High 16 bits of the 24-bit TDC value for the second end of the straw.
+
+    - name: Second TDC Value (low 8 bits) + Second ToT Value
+      bits: "15:0"
+      word: 4
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of the 24-bit Second TDC value.
+        Bits [7:0]: Second ToT (time-over-threshold) value (8 bits).
+
+    - name: ADC Sample 0 (12 bits) + ADC Sample 1 high 4 bits
+      bits: "15:0"
+      word: 5
+      size_bits: 16
+      description: >
+        Bits [15:4]: ADC Sample 0 (12 bits, most significant).
+        Bits [3:0]: High 4 bits of ADC Sample 1 (12 bits, packed).
+        ADC samples are 12-bit and packed tightly across word boundaries.
+
+    - name: ADC Sample 1 low 8 bits + ADC Sample 2 high 8 bits
+      bits: "15:0"
+      word: 6
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of ADC Sample 1 (continuation).
+        Bits [7:0]: High 8 bits of ADC Sample 2 (12 bits, packed).
+
+    - name: ADC Sample 2 low 4 bits + ADC Sample 3 (12 bits)
+      bits: "15:0"
+      word: 7
+      size_bits: 16
+      description: >
+        Bits [15:12]: Low 4 bits of ADC Sample 2 (continuation).
+        Bits [11:0]: ADC Sample 3 (12 bits, complete).
+
+    - name: CRC (packet 1)
+      bits: "15:0"
+      word: 8
+      size_bits: 16
+      description: 16-bit CRC for packet 1.
+
+packet_2:
+  description: Second of two Data Payload Packets per tracker hit (words 8-15 of the hit payload).
+  serial_header:
+    k_char: K28.0
+    d_char: D6.y
+  fields:
+    - name: ADC Sample 4 (12 bits) + ADC Sample 5 high 4 bits
+      bits: "15:0"
+      word: 0
+      size_bits: 16
+      description: >
+        Bits [15:4]: ADC Sample 4 (12 bits).
+        Bits [3:0]: High 4 bits of ADC Sample 5.
+
+    - name: ADC Sample 5 low 8 bits + ADC Sample 6 high 8 bits
+      bits: "15:0"
+      word: 1
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of ADC Sample 5 (continuation).
+        Bits [7:0]: High 8 bits of ADC Sample 6.
+
+    - name: ADC Sample 6 low 4 bits + ADC Sample 7 (12 bits)
+      bits: "15:0"
+      word: 2
+      size_bits: 16
+      description: >
+        Bits [15:12]: Low 4 bits of ADC Sample 6 (continuation).
+        Bits [11:0]: ADC Sample 7 (12 bits, complete).
+
+    - name: ADC Sample 8 (12 bits) + ADC Sample 9 high 4 bits
+      bits: "15:0"
+      word: 3
+      size_bits: 16
+      description: >
+        Bits [15:4]: ADC Sample 8 (12 bits).
+        Bits [3:0]: High 4 bits of ADC Sample 9.
+
+    - name: ADC Sample 9 low 8 bits + ADC Sample 10 high 8 bits
+      bits: "15:0"
+      word: 4
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of ADC Sample 9 (continuation).
+        Bits [7:0]: High 8 bits of ADC Sample 10.
+
+    - name: ADC Sample 10 low 4 bits + ADC Sample 11 (12 bits)
+      bits: "15:0"
+      word: 5
+      size_bits: 16
+      description: >
+        Bits [15:12]: Low 4 bits of ADC Sample 10 (continuation).
+        Bits [11:0]: ADC Sample 11 (12 bits, complete).
+
+    - name: ADC Sample 12 (12 bits) + ADC Sample 13 high 4 bits
+      bits: "15:0"
+      word: 6
+      size_bits: 16
+      description: >
+        Bits [15:4]: ADC Sample 12 (12 bits).
+        Bits [3:0]: High 4 bits of ADC Sample 13.
+
+    - name: ADC Sample 13 low 8 bits + ADC Sample 14 high 8 bits
+      bits: "15:0"
+      word: 7
+      size_bits: 16
+      description: >
+        Bits [15:8]: Low 8 bits of ADC Sample 13 (continuation).
+        Bits [7:0]: High 8 bits of ADC Sample 14.
+
+    - name: ADC Sample 14 low 4 bits + Preprocessing Flags + Reserved
+      bits: "15:0"
+      word: 8
+      size_bits: 16
+      description: >
+        Bits [15:12]: Low 4 bits of ADC Sample 14 (continuation).
+        Bits [11:4]: Preprocessing Flags (8 bits), filled in by DTC firmware.
+        Bits [3:0]: Reserved, should be zero.
+
+    - name: CRC (packet 2)
+      bits: "15:0"
+      word: 9
+      size_bits: 16
+      description: 16-bit CRC for packet 2.
+
+notes: >
+  - Straw index range: 0 to 23,039 (16 bits).
+  - TDC values: 24-bit each, representing pulse times at the two ends of the straw.
+  - ToT (time-over-threshold) values: 8-bit each, representing pulse duration.
+  - ADC samples: 15 samples per hit, each 12-bit, packed tightly across word boundaries
+    (4 samples fit in 3 words, with no padding between samples).
+  - Sample indices 0-14 cover ADC samples 0 through 14.
+  - Preprocessing Flags: 8-bit field filled by DTC firmware (not the ROC).
+  - The packing layout is fixed: 4 samples use 3 words (48 bits / 12 = 4 samples).
