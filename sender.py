@@ -25,7 +25,7 @@ try:
     from PyQt6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QSplitter,
         QGroupBox, QTextEdit, QToolBar, QLabel, QComboBox, QCheckBox,
-        QPushButton, QLineEdit, QMessageBox,
+        QPushButton, QLineEdit, QMessageBox, QFileDialog,
         QScrollArea, QGridLayout, QVBoxLayout, QSizePolicy,
         QMenu, QStyleFactory,
     )
@@ -312,21 +312,115 @@ class Mu2eSender(QMainWindow):
     def _build_menu(self):
         menu_bar = self.menuBar()
 
+        # ── File menu ─────────────────────────────────────────────────
+        file_menu = menu_bar.addMenu("File")
+        file_menu.addAction("Load config…", self._load_config_file)
+        file_menu.addAction("Save config…", self._save_config_file)
+
         # ── View menu ─────────────────────────────────────────────────
         view_menu = menu_bar.addMenu("View")
 
         style_menu = view_menu.addMenu("Style")
-        style_group = QActionGroup(self)
-        style_group.setExclusive(True)
+        self._style_group = QActionGroup(self)
+        self._style_group.setExclusive(True)
         current_style = QApplication.instance().style().objectName().lower()
         for name in sorted(QStyleFactory.keys()):
             action = style_menu.addAction(name)
             action.setCheckable(True)
             action.setChecked(name.lower() == current_style)
-            style_group.addAction(action)
+            self._style_group.addAction(action)
             action.triggered.connect(
                 lambda checked, s=name: QApplication.instance().setStyle(s)
             )
+
+    def _load_config_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load config file", "",
+            "YAML files (*.yaml *.yml);;All files (*.*)",
+        )
+        if not path:
+            return
+        try:
+            cfg = _config.load(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Load config", f"Could not load config:\n{exc}")
+            return
+        self._cfg = cfg
+        self._apply_config(cfg)
+
+    def _save_config_file(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save config file", "mu2e-viewer.yaml",
+            "YAML files (*.yaml *.yml);;All files (*.*)",
+        )
+        if not path:
+            return
+        cfg = self._current_config_state()
+        try:
+            import yaml
+            with open(path, "w") as fh:
+                yaml.dump(cfg, fh, default_flow_style=False, sort_keys=False)
+        except Exception as exc:
+            QMessageBox.critical(self, "Save config", f"Could not save config:\n{exc}")
+            return
+        self._status_label.setText(f"Config saved to {path}")
+
+    def _current_config_state(self) -> dict:
+        """Return a dict of the current UI settings suitable for saving."""
+        return {
+            "formats_dir": self.yaml_dir,
+            "default_format": self.format_combo.currentText(),
+            "sender": {
+                "host": self.host_edit.text(),
+                "port": int(self.port_edit.text() or 7755),
+            },
+            "font_size": self._font_size,
+            "qt_style": QApplication.instance().style().objectName(),
+        }
+
+    def _apply_config(self, cfg: dict) -> None:
+        """Apply all settings from *cfg* to the live UI."""
+        # Formats dir — reload if changed
+        new_dir = cfg.get("formats_dir", self.yaml_dir)
+        if new_dir != self.yaml_dir:
+            self.yaml_dir = new_dir
+            self.formats = load_yaml_formats(new_dir)
+            fmt_names = sorted(self.formats.keys())
+            self.format_combo.blockSignals(True)
+            self.format_combo.clear()
+            for name in fmt_names:
+                self.format_combo.addItem(name)
+            self.format_combo.blockSignals(False)
+
+        # Default format
+        default = cfg.get("default_format", "")
+        if default:
+            idx = self.format_combo.findText(default)
+            if idx >= 0:
+                self.format_combo.blockSignals(True)
+                self.format_combo.setCurrentIndex(idx)
+                self.format_combo.blockSignals(False)
+
+        # Sender host and port
+        sender_cfg = cfg.get("sender", {})
+        self.host_edit.setText(str(sender_cfg.get("host", self.host_edit.text())))
+        self.port_edit.setText(str(sender_cfg.get("port", self.port_edit.text())))
+
+        # Font size
+        new_size = int(cfg.get("font_size", self._font_size))
+        if new_size != self._font_size:
+            self._font_size = new_size
+            self._on_font_size_changed()
+
+        # Qt style
+        style = cfg.get("qt_style", "")
+        if style:
+            QApplication.instance().setStyle(style)
+            for action in self._style_group.actions():
+                action.setChecked(action.text().lower() == style.lower())
+
+        # Rebuild field rows with any new format/font
+        self._load_format()
 
     def _build_toolbar(self):
         bar = self.addToolBar("Main")
