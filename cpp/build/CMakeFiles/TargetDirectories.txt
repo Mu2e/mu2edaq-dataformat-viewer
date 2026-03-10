@@ -1,8 +1,0 @@
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/mu2e_sender.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/mu2e_send.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/edit_cache.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/rebuild_cache.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/list_install_components.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/install.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/install/local.dir
-/Users/anorman/mu2edaq-dataformat-viewer/cpp/build/CMakeFiles/install/strip.dir
