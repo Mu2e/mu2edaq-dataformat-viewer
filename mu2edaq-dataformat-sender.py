@@ -301,10 +301,14 @@ class Mu2eSender(QMainWindow):
                 self.format_combo.setCurrentIndex(idx)
                 self.format_combo.blockSignals(False)
 
-        # Sender host and port
+        # Sender host, port, and protocol
         sender_cfg = self._cfg.get("sender", {})
         self.host_edit.setText(str(sender_cfg.get("host", "localhost")))
         self.port_edit.setText(str(sender_cfg.get("port", 7755)))
+        proto = sender_cfg.get("protocol", "TCP")
+        idx = self._proto_combo.findText(proto.upper())
+        if idx >= 0:
+            self._proto_combo.setCurrentIndex(idx)
 
         # Font size label
         self._font_size_label.setText(str(self._font_size))
@@ -373,6 +377,7 @@ class Mu2eSender(QMainWindow):
             "sender": {
                 "host": self.host_edit.text(),
                 "port": int(self.port_edit.text() or 7755),
+                "protocol": self._proto_combo.currentText(),
             },
             "font_size": self._font_size,
             "qt_style": QApplication.instance().style().objectName(),
@@ -401,10 +406,14 @@ class Mu2eSender(QMainWindow):
                 self.format_combo.setCurrentIndex(idx)
                 self.format_combo.blockSignals(False)
 
-        # Sender host and port
+        # Sender host, port, and protocol
         sender_cfg = cfg.get("sender", {})
         self.host_edit.setText(str(sender_cfg.get("host", self.host_edit.text())))
         self.port_edit.setText(str(sender_cfg.get("port", self.port_edit.text())))
+        proto = sender_cfg.get("protocol", self._proto_combo.currentText())
+        idx = self._proto_combo.findText(str(proto).upper())
+        if idx >= 0:
+            self._proto_combo.setCurrentIndex(idx)
 
         # Font size
         new_size = int(cfg.get("font_size", self._font_size))
@@ -423,11 +432,12 @@ class Mu2eSender(QMainWindow):
         self._load_format()
 
     def _build_toolbar(self):
-        bar = self.addToolBar("Main")
-        bar.setMovable(False)
-        bar.setFloatable(False)
+        # ── Row 1: packet format and endian ───────────────────────────
+        bar1 = self.addToolBar("Format")
+        bar1.setMovable(False)
+        bar1.setFloatable(False)
 
-        bar.addWidget(QLabel("  Packet format: "))
+        bar1.addWidget(QLabel("  Packet format: "))
 
         self.format_combo = QComboBox()
         self.format_combo.setFont(self._mono_font)
@@ -438,51 +448,60 @@ class Mu2eSender(QMainWindow):
         if fmt_names:
             self.format_combo.setCurrentIndex(0)
         self.format_combo.currentIndexChanged.connect(lambda _: self._load_format())
-        bar.addWidget(self.format_combo)
+        bar1.addWidget(self.format_combo)
 
-        bar.addSeparator()
+        bar1.addSeparator()
 
         self._le_check = QCheckBox("Little-endian words")
         self._le_check.setFont(self._mono_font)
         self._le_check.stateChanged.connect(self._on_le_changed)
-        bar.addWidget(self._le_check)
+        bar1.addWidget(self._le_check)
 
-        bar.addSeparator()
+        # ── Row 2: connection, send, status, font ─────────────────────
+        bar2 = self.addToolBar("Send")
+        bar2.setMovable(False)
+        bar2.setFloatable(False)
 
-        bar.addWidget(QLabel("  Viewer host: "))
+        bar2.addWidget(QLabel("  Protocol: "))
+        self._proto_combo = QComboBox()
+        self._proto_combo.setFont(self._mono_font)
+        self._proto_combo.addItems(["TCP", "UDP"])
+        bar2.addWidget(self._proto_combo)
+
+        bar2.addWidget(QLabel("  Viewer host: "))
         self.host_edit = QLineEdit("localhost")
         self.host_edit.setFont(self._mono_font)
         self.host_edit.setFixedWidth(120)
-        bar.addWidget(self.host_edit)
+        bar2.addWidget(self.host_edit)
 
-        bar.addWidget(QLabel("  port: "))
+        bar2.addWidget(QLabel("  port: "))
         self.port_edit = QLineEdit("7755")
         self.port_edit.setFont(self._mono_font)
         self.port_edit.setFixedWidth(60)
-        bar.addWidget(self.port_edit)
+        bar2.addWidget(self.port_edit)
 
-        bar.addSeparator()
+        bar2.addSeparator()
 
         btn_send = QPushButton("Send to viewer")
         btn_send.setFont(self._mono_font)
         btn_send.clicked.connect(self._send)
-        bar.addWidget(btn_send)
+        bar2.addWidget(btn_send)
 
         btn_reset = QPushButton("Reset fields")
         btn_reset.setFont(self._mono_font)
         btn_reset.clicked.connect(self._load_format)
-        bar.addWidget(btn_reset)
+        bar2.addWidget(btn_reset)
 
-        bar.addSeparator()
+        bar2.addSeparator()
 
         self._status_label = QLabel("Ready")
         self._status_label.setFont(self._mono_font)
         self._status_label.setStyleSheet("color: gray;")
-        bar.addWidget(self._status_label)
+        bar2.addWidget(self._status_label)
 
-        bar.addSeparator()
+        bar2.addSeparator()
 
-        bar.addWidget(QLabel("  Font: "))
+        bar2.addWidget(QLabel("  Font: "))
 
         btn_font_dec = QPushButton("A-")
         btn_font_dec.setFont(self._mono_font)
@@ -491,11 +510,11 @@ class Mu2eSender(QMainWindow):
                 self._font_size -= 1
             self._on_font_size_changed()
         btn_font_dec.clicked.connect(_dec_font)
-        bar.addWidget(btn_font_dec)
+        bar2.addWidget(btn_font_dec)
 
         self._font_size_label = QLabel(str(self._font_size))
         self._font_size_label.setFont(self._mono_font)
-        bar.addWidget(self._font_size_label)
+        bar2.addWidget(self._font_size_label)
 
         btn_font_inc = QPushButton("A+")
         btn_font_inc.setFont(self._mono_font)
@@ -504,7 +523,7 @@ class Mu2eSender(QMainWindow):
                 self._font_size += 1
             self._on_font_size_changed()
         btn_font_inc.clicked.connect(_inc_font)
-        bar.addWidget(btn_font_inc)
+        bar2.addWidget(btn_font_inc)
 
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -716,17 +735,22 @@ class Mu2eSender(QMainWindow):
             QMessageBox.critical(self, "Send error", "Invalid port number.")
             return
 
+        proto = self._proto_combo.currentText()
         try:
-            with socket.create_connection((host, port), timeout=5) as sock:
-                sock.sendall(bytes(buf))
+            if proto == "UDP":
+                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                    sock.sendto(bytes(buf), (host, port))
+            else:
+                with socket.create_connection((host, port), timeout=5) as sock:
+                    sock.sendall(bytes(buf))
             self._status_label.setText(
-                f"Sent {len(buf)} bytes to {host}:{port}"
+                f"Sent {len(buf)} bytes to {host}:{port} via {proto}"
             )
             self._status_label.setStyleSheet("color: gray;")
         except OSError as exc:
             QMessageBox.critical(
                 self, "Send error",
-                f"Could not connect to {host}:{port}\n\n{exc}"
+                f"Could not send to {host}:{port} via {proto}\n\n{exc}"
             )
             self._status_label.setText("Send failed")
             self._status_label.setStyleSheet("color: red;")

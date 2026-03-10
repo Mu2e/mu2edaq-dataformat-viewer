@@ -1,0 +1,2 @@
+/Library/Developer/CommandLineTools/usr/bin/ar qc libmu2e_sender.a CMakeFiles/mu2e_sender.dir/src/mu2e_sender.cpp.o
+/Library/Developer/CommandLineTools/usr/bin/ranlib libmu2e_sender.a

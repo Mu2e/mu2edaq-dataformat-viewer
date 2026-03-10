@@ -31,8 +31,41 @@ definitions derived from the Mu2e ROC Packet Protocol specification
 - 21 packet format definitions covering all Mu2e ROC packet types
 - PyQt6 GUI with Fusion, Windows, and macOS style options (View → Style)
 - Adjustable font size (A− / A+ toolbar buttons, range 7–24 pt)
-- YAML configuration file for ports, font size, Qt style, default format, and format file path
+- YAML configuration file for ports, protocol, font size, Qt style, default format, and format file path
 - File → Load config… and File → Save config… for runtime config management
+- Selectable transport protocol: **TCP** or **UDP**
+
+### C++ sender library (`cpp/`)
+
+A small C library (`libmu2e_sender`) and a companion CLI tool (`mu2e_send`) for
+sending raw packet bytes from C/C++ programs or shell scripts.
+
+```bash
+cd cpp
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+
+# Send hex bytes over TCP (default)
+./build/mu2e_send localhost 7755 10 00 80 10 AB CD EF 01
+
+# Send a binary file over UDP
+./build/mu2e_send --udp -f test/test.dat localhost 7755
+```
+
+The library exposes a simple C API:
+
+```c
+#include "mu2e_sender.h"
+
+// TCP send
+mu2e_send_tcp("localhost", 7755, data, len);
+
+// UDP send
+mu2e_send_udp("localhost", 7755, data, len);
+
+// Protocol-selectable
+mu2e_send(MU2E_PROTO_TCP, "localhost", 7755, data, len);
+```
 
 ---
 
@@ -134,6 +167,14 @@ mu2edaq-dataformat-viewer/
 ├── test/                          # Sample binary data files
 ├── doc/
 │   └── mu2e-dataformat.pdf        # Mu2e-doc-4914 source specification
+├── cpp/                           # C++ sender library and CLI tool
+│   ├── CMakeLists.txt
+│   ├── include/
+│   │   └── mu2e_sender.h          # Public C API
+│   ├── src/
+│   │   └── mu2e_sender.cpp        # Library implementation
+│   └── tools/
+│       └── mu2e_send.cpp          # CLI utility
 ├── requirements.txt
 ├── README.md
 └── USAGE.md                       # Detailed usage guide

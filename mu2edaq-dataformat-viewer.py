@@ -5,6 +5,14 @@ Mu2e Data Format Viewer
 Displays Mu2e ROC packet byte data broken out field-by-field using YAML format
 definitions.  Data can be entered manually as hex bytes, loaded from a binary
 file, or received over a TCP socket from an external application.
+
+The functionality is designed to mimic what we had with the NOvA EventMemoryViewer, but with a more modern UI and more flexible format definitions.
+
+Here we support ingesting data from a number of different types of sources (not just shared memory).
+We also move the definitions of the packet structures to a config style YAML format.  This allows us 
+to extend or change the way the data is displayed without needing to change the code or rebuild it.
+
+
 """
 
 import argparse
@@ -28,7 +36,7 @@ try:
         QGroupBox, QTreeWidget, QTreeWidgetItem, QPlainTextEdit, QTextEdit,
         QToolBar, QLabel, QComboBox, QRadioButton, QButtonGroup, QCheckBox,
         QPushButton, QSpinBox, QLineEdit, QFileDialog, QMessageBox,
-        QVBoxLayout, QHBoxLayout, QSizePolicy, QMenu,
+        QVBoxLayout, QHBoxLayout, QSizePolicy, QMenu, QFrame,
     )
     from PyQt6.QtCore import (
         Qt, QObject, pyqtSignal, QTimer, QMetaObject, Q_ARG,
@@ -227,9 +235,14 @@ class Mu2eViewer(QMainWindow):
             if idx >= 0:
                 self.format_combo.setCurrentIndex(idx)
 
-        # Viewer port
-        port = self._cfg.get("viewer", {}).get("port", 7755)
+        # Viewer port and protocol
+        viewer_cfg = self._cfg.get("viewer", {})
+        port = viewer_cfg.get("port", 7755)
         self._port_edit.setText(str(port))
+        proto = viewer_cfg.get("protocol", "TCP")
+        idx = self._proto_combo.findText(proto.upper())
+        if idx >= 0:
+            self._proto_combo.setCurrentIndex(idx)
 
         # Font size (widget already initialised with self._font_size; update label)
         self._font_size_label.setText(str(self._font_size))
@@ -297,6 +310,7 @@ class Mu2eViewer(QMainWindow):
             "default_format": self.format_combo.currentText(),
             "viewer": {
                 "port": int(self._port_edit.text() or 7755),
+                "protocol": self._proto_combo.currentText(),
             },
             "font_size": self._font_size,
             "qt_style": QApplication.instance().style().objectName(),
@@ -318,9 +332,14 @@ class Mu2eViewer(QMainWindow):
             if idx >= 0:
                 self.format_combo.setCurrentIndex(idx)
 
-        # Viewer port
-        port = cfg.get("viewer", {}).get("port", 7755)
+        # Viewer port and protocol
+        viewer_cfg = cfg.get("viewer", {})
+        port = viewer_cfg.get("port", 7755)
         self._port_edit.setText(str(port))
+        proto = viewer_cfg.get("protocol", "TCP")
+        idx = self._proto_combo.findText(proto.upper())
+        if idx >= 0:
+            self._proto_combo.setCurrentIndex(idx)
 
         # Font size
         new_size = int(cfg.get("font_size", self._font_size))
@@ -337,22 +356,49 @@ class Mu2eViewer(QMainWindow):
                 action.setChecked(action.text().lower() == style.lower())
 
     def _build_toolbar(self):
-        bar = self.addToolBar("Main")
+        bar = self.addToolBar("Controls")
         bar.setMovable(False)
         bar.setFloatable(False)
 
-        # Format selector
-        bar.addWidget(QLabel("  Packet format: "))
+        # Single container widget holding two stacked rows of controls
+        container = QWidget()
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(2, 2, 2, 2)
+        vbox.setSpacing(2)
+
+        row1 = QWidget()
+        h1 = QHBoxLayout(row1)
+        h1.setContentsMargins(0, 0, 0, 0)
+        h1.setSpacing(4)
+
+        row2 = QWidget()
+        h2 = QHBoxLayout(row2)
+        h2.setContentsMargins(0, 0, 0, 0)
+        h2.setSpacing(4)
+
+        vbox.addWidget(row1)
+        vbox.addWidget(row2)
+        bar.addWidget(container)
+
+        def sep() -> QFrame:
+            f = QFrame()
+            f.setFrameShape(QFrame.Shape.VLine)
+            f.setFrameShadow(QFrame.Shadow.Sunken)
+            f.setFixedWidth(6)
+            return f
+
+        # ── Row 1: format, display mode, endian, load/detect/clear, status, font ──
+
+        h1.addWidget(QLabel("Packet format: "))
         self.format_combo = QComboBox()
         self.format_combo.setFont(self._f())
         self.format_combo.setMinimumWidth(300)
         self.format_combo.currentIndexChanged.connect(lambda _: self._refresh_display())
-        bar.addWidget(self.format_combo)
+        h1.addWidget(self.format_combo)
 
-        bar.addSeparator()
+        h1.addWidget(sep())
 
-        # Display mode
-        bar.addWidget(QLabel("  Values: "))
+        h1.addWidget(QLabel("Values: "))
         self._display_mode_group = QButtonGroup(self)
         for label, val in (("Hex", "hex"), ("Binary", "bin"), ("Decimal", "dec")):
             rb = QRadioButton(label)
@@ -361,85 +407,114 @@ class Mu2eViewer(QMainWindow):
             if val == "hex":
                 rb.setChecked(True)
             self._display_mode_group.addButton(rb)
-            bar.addWidget(rb)
+            h1.addWidget(rb)
         self._display_mode_group.buttonClicked.connect(lambda _: self._refresh_display())
 
-        bar.addSeparator()
+        h1.addWidget(sep())
 
         self._le_check = QCheckBox("Little-endian words")
         self._le_check.setFont(self._f())
         self._le_check.stateChanged.connect(lambda _: self._on_le_changed())
-        bar.addWidget(self._le_check)
+        h1.addWidget(self._le_check)
 
-        bar.addSeparator()
+        h1.addWidget(sep())
 
         btn_load = QPushButton("Load file\u2026")
         btn_load.setFont(self._f())
         btn_load.clicked.connect(self._load_file)
-        bar.addWidget(btn_load)
+        h1.addWidget(btn_load)
 
         btn_auto = QPushButton("Auto-detect type")
         btn_auto.setFont(self._f())
         btn_auto.clicked.connect(self._auto_detect)
-        bar.addWidget(btn_auto)
+        h1.addWidget(btn_auto)
 
         btn_clear = QPushButton("Clear")
         btn_clear.setFont(self._f())
         btn_clear.clicked.connect(self._clear)
-        bar.addWidget(btn_clear)
+        h1.addWidget(btn_clear)
 
-        bar.addSeparator()
-
-        # Decode offset
-        bar.addWidget(QLabel("  Offset (bytes): "))
-        self._offset_spin = QSpinBox()
-        self._offset_spin.setFont(self._f())
-        self._offset_spin.setRange(0, 65535)
-        self._offset_spin.setValue(0)
-        self._offset_spin.valueChanged.connect(lambda _: self._refresh_display())
-        bar.addWidget(self._offset_spin)
-
-        bar.addSeparator()
-
-        # Socket listener
-        bar.addWidget(QLabel("  TCP port: "))
-        self._port_edit = QLineEdit("7755")
-        self._port_edit.setFont(self._f())
-        self._port_edit.setFixedWidth(60)
-        bar.addWidget(self._port_edit)
-
-        self._listen_btn = QPushButton("Start listening")
-        self._listen_btn.setFont(self._f())
-        self._listen_btn.clicked.connect(self._toggle_server)
-        bar.addWidget(self._listen_btn)
-
-        bar.addSeparator()
+        h1.addWidget(sep())
 
         self._status_label = QLabel("No data")
         self._status_label.setFont(self._f())
         self._status_label.setStyleSheet("color: gray;")
-        bar.addWidget(self._status_label)
+        h1.addWidget(self._status_label)
 
-        bar.addSeparator()
+        h1.addWidget(sep())
 
-        bar.addWidget(QLabel("  Font: "))
-
+        h1.addWidget(QLabel("Font: "))
         btn_font_minus = QPushButton("A-")
         btn_font_minus.clicked.connect(lambda: (
             setattr(self, '_font_size', max(7, self._font_size - 1)),
             self._on_font_size_changed(),
         ))
-        bar.addWidget(btn_font_minus)
+        h1.addWidget(btn_font_minus)
 
         self._font_size_label = QLabel(str(self._font_size))
-        bar.addWidget(self._font_size_label)
+        h1.addWidget(self._font_size_label)
 
         btn_font_plus = QPushButton("A+")
         btn_font_plus.clicked.connect(lambda: (
             setattr(self, '_font_size', min(24, self._font_size + 1)),
             self._on_font_size_changed(),
         ))
-        bar.addWidget(btn_font_plus)
+        h1.addWidget(btn_font_plus)
+        h1.addStretch()
+
+        # ── Row 2: offset, bytes/row, word size, protocol, port, listen ──────────
+
+        h2.addWidget(QLabel("Offset (bytes): "))
+        self._offset_spin = QSpinBox()
+        self._offset_spin.setFont(self._f())
+        self._offset_spin.setRange(0, 65535)
+        self._offset_spin.setValue(0)
+        self._offset_spin.valueChanged.connect(lambda _: self._refresh_display())
+        h2.addWidget(self._offset_spin)
+
+        h2.addWidget(sep())
+
+        h2.addWidget(QLabel("Bytes/row: "))
+        self._row_width_combo = QComboBox()
+        self._row_width_combo.setFont(self._f())
+        for w in ("8", "16", "32"):
+            self._row_width_combo.addItem(w)
+        self._row_width_combo.setCurrentIndex(1)   # default 16
+        self._row_width_combo.currentIndexChanged.connect(
+            lambda _: self._reformat_hex_display()
+        )
+        h2.addWidget(self._row_width_combo)
+
+        h2.addWidget(QLabel("  Word size: "))
+        self._word_size_combo = QComboBox()
+        self._word_size_combo.setFont(self._f())
+        for label, val in (("1 byte", "1"), ("2 bytes", "2"), ("4 bytes", "4")):
+            self._word_size_combo.addItem(label, val)
+        self._word_size_combo.setCurrentIndex(0)   # default 1 byte
+        self._word_size_combo.currentIndexChanged.connect(
+            lambda _: self._reformat_hex_display()
+        )
+        h2.addWidget(self._word_size_combo)
+
+        h2.addWidget(sep())
+
+        h2.addWidget(QLabel("Protocol: "))
+        self._proto_combo = QComboBox()
+        self._proto_combo.setFont(self._f())
+        self._proto_combo.addItems(["TCP", "UDP"])
+        h2.addWidget(self._proto_combo)
+
+        h2.addWidget(QLabel("  Port: "))
+        self._port_edit = QLineEdit("7755")
+        self._port_edit.setFont(self._f())
+        self._port_edit.setFixedWidth(60)
+        h2.addWidget(self._port_edit)
+
+        self._listen_btn = QPushButton("Start listening")
+        self._listen_btn.setFont(self._f())
+        self._listen_btn.clicked.connect(self._toggle_server)
+        h2.addWidget(self._listen_btn)
+        h2.addStretch()
 
     def _build_central(self):
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -567,9 +642,10 @@ class Mu2eViewer(QMainWindow):
         cursor = self.hex_input.cursorForPosition(event.pos())
         click_pos = cursor.position()
 
-        for byte_idx, (start, end) in enumerate(self._byte_token_positions()):
+        word_size = int(self._word_size_combo.currentData())
+        for token_idx, (start, end) in enumerate(self._byte_token_positions()):
             if start <= click_pos < end:
-                self._offset_spin.setValue(byte_idx)
+                self._offset_spin.setValue(token_idx * word_size)
                 # _refresh_display will be called via valueChanged signal
                 return
 
@@ -580,20 +656,26 @@ class Mu2eViewer(QMainWindow):
 
         if offset >= 0:
             positions = self._byte_token_positions()
+            word_size = int(self._word_size_combo.currentData())
             fmt = QTextCharFormat()
             fmt.setForeground(QColor("red"))
             fmt.setFontWeight(QFont.Weight.Bold)
 
+            # Highlight the token(s) that contain byte `offset` and byte `offset+1`
+            seen = set()
             for byte_idx in (offset, offset + 1):
-                if byte_idx < len(positions):
-                    start, end = positions[byte_idx]
-                    sel = QTextEdit.ExtraSelection()
-                    cursor = self.hex_input.textCursor()
-                    cursor.setPosition(start)
-                    cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
-                    sel.cursor = cursor
-                    sel.format = fmt
-                    selections.append(sel)
+                token_idx = byte_idx // word_size
+                if token_idx in seen or token_idx >= len(positions):
+                    continue
+                seen.add(token_idx)
+                start, end = positions[token_idx]
+                sel = QTextEdit.ExtraSelection()
+                cursor = self.hex_input.textCursor()
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+                sel.cursor = cursor
+                sel.format = fmt
+                selections.append(sel)
 
         self.hex_input.setExtraSelections(selections)
 
@@ -837,11 +919,33 @@ class Mu2eViewer(QMainWindow):
             data = fh.read()
         self._set_bytes(data)
 
+    def _format_hex_rows(self, data: bytes) -> str:
+        """Format *data* as hex, breaking into rows and grouping into words."""
+        n = int(self._row_width_combo.currentText())
+        word_size = int(self._word_size_combo.currentData())
+        lines = []
+        for i in range(0, len(data), n):
+            chunk = data[i:i + n]
+            words = []
+            for j in range(0, len(chunk), word_size):
+                word_bytes = chunk[j:j + word_size].ljust(word_size, b"\x00")
+                words.append("".join(f"{b:02X}" for b in word_bytes))
+            lines.append(" ".join(words))
+        return "\n".join(lines)
+
+    def _reformat_hex_display(self) -> None:
+        """Re-render self.data_bytes with the current row width, preserving offset highlight."""
+        if not self.data_bytes:
+            return
+        self.hex_input.blockSignals(True)
+        self.hex_input.setPlainText(self._format_hex_rows(self.data_bytes))
+        self.hex_input.blockSignals(False)
+        self._highlight_offset(self._offset_spin.value())
+
     def _set_bytes(self, data: bytes):
-        hex_str = " ".join(f"{b:02X}" for b in data)
         # Block textChanged signal to avoid double refresh
         self.hex_input.blockSignals(True)
-        self.hex_input.setPlainText(hex_str)
+        self.hex_input.setPlainText(self._format_hex_rows(data))
         self.hex_input.blockSignals(False)
         self._refresh_display()
 
@@ -872,15 +976,24 @@ class Mu2eViewer(QMainWindow):
         except ValueError:
             QMessageBox.critical(self, "Error", "Invalid port number.")
             return
+        proto = self._proto_combo.currentText()
         try:
-            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            srv.bind(("0.0.0.0", port))
-            srv.listen(5)
-            self._server_socket = srv
-            threading.Thread(target=self._accept_loop, daemon=True).start()
+            if proto == "UDP":
+                srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                srv.bind(("0.0.0.0", port))
+                self._server_socket = srv
+                threading.Thread(target=self._udp_loop, daemon=True).start()
+            else:
+                srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                srv.bind(("0.0.0.0", port))
+                srv.listen(5)
+                self._server_socket = srv
+                threading.Thread(target=self._accept_loop, daemon=True).start()
             self._listen_btn.setText("Stop listening")
-            self._set_status(f"Listening on TCP port {port}\u2026")
+            self._proto_combo.setEnabled(False)
+            self._set_status(f"Listening on {proto} port {port}\u2026")
         except OSError as exc:
             QMessageBox.critical(self, "Error", f"Could not start server:\n{exc}")
 
@@ -892,6 +1005,7 @@ class Mu2eViewer(QMainWindow):
                 pass
             self._server_socket = None
         self._listen_btn.setText("Start listening")
+        self._proto_combo.setEnabled(True)
         self._set_status("Server stopped.")
 
     def _accept_loop(self):
@@ -901,6 +1015,15 @@ class Mu2eViewer(QMainWindow):
                 threading.Thread(
                     target=self._handle_conn, args=(conn,), daemon=True
                 ).start()
+            except Exception:
+                break
+
+    def _udp_loop(self):
+        while self._server_socket:
+            try:
+                data, _ = self._server_socket.recvfrom(65536)
+                if data:
+                    self._receiver.data_received.emit(data)
             except Exception:
                 break
 
@@ -924,7 +1047,8 @@ class Mu2eViewer(QMainWindow):
     def _on_socket_data(self, data: bytes):
         self._set_bytes(data)
         self._auto_detect()
-        self._set_status(f"Received {len(data)} bytes via TCP")
+        proto = self._proto_combo.currentText()
+        self._set_status(f"Received {len(data)} bytes via {proto}")
 
 
 # ---------------------------------------------------------------------------
