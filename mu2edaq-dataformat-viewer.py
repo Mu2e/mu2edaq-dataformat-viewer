@@ -235,9 +235,11 @@ class Mu2eViewer(QMainWindow):
             if idx >= 0:
                 self.format_combo.setCurrentIndex(idx)
 
-        # Viewer port and protocol
+        # Viewer port and protocol.
+        # CRS_PORT_LISTEN is exported by the control room crs-app launcher.
         viewer_cfg = self._cfg.get("viewer", {})
-        port = viewer_cfg.get("port", 7755)
+        port = int(os.environ.get("CRS_PORT_LISTEN",
+                                  viewer_cfg.get("port", 7755)))
         self._port_edit.setText(str(port))
         proto = viewer_cfg.get("protocol", "TCP")
         idx = self._proto_combo.findText(proto.upper())
@@ -994,10 +996,27 @@ class Mu2eViewer(QMainWindow):
             self._listen_btn.setText("Stop listening")
             self._proto_combo.setEnabled(False)
             self._set_status(f"Listening on {proto} port {port}\u2026")
+            self._start_responder(port, proto)
         except OSError as exc:
             QMessageBox.critical(self, "Error", f"Could not start server:\n{exc}")
 
+    def _start_responder(self, port, proto):
+        """Announce the listener via mu2edaq-discovery (optional dependency).
+        Started only while actually listening, stopped with the server."""
+        try:
+            from mu2edaq_discovery import Responder
+        except ImportError:
+            return
+        self._responder = Responder(
+            name="Data Format Viewer", app="dataformat-viewer",
+            port=port, scheme=proto.lower())
+        self._responder.start()
+
     def _stop_server(self):
+        responder = getattr(self, "_responder", None)
+        if responder is not None:
+            responder.stop()
+            self._responder = None
         if self._server_socket:
             try:
                 self._server_socket.close()

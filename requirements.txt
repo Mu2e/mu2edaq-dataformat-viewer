@@ -1,2 +1,3 @@
 PyYAML>=6.0
 PyQt6>=6.4
+mu2edaq-discovery @ git+https://github.com/Mu2e/mu2edaq-discovery.git
