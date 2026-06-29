@@ -1076,4 +1076,24 @@ if __name__ == "__main__":
     app.setFont(QFont("Courier", cfg.get("font_size", 11)))
     window = Mu2eViewer(cfg)
     window.show()
-    sys.exit(app.exec())
+
+    # Mu2e DAQ service discovery: advertise the viewer's configured listen port
+    # (honors CRS_PORT_LISTEN) so the app appears in mu2edaq-discover scans and
+    # the control room browser. The viewer binds the listen socket when the user
+    # starts listening; the configured port is advertised here at startup.
+    # Best-effort so a missing package never blocks startup.
+    responder = None
+    try:
+        from mu2edaq_discovery import Responder
+        responder = Responder(name="Data Format Viewer", app="dataformat-viewer",
+                              port=cfg["viewer"]["port"], scheme="tcp")
+        responder.start()
+    except Exception as exc:
+        print(f"[Discovery] responder not started: {exc}")
+
+    try:
+        rc = app.exec()
+    finally:
+        if responder is not None:
+            responder.stop()
+    sys.exit(rc)
