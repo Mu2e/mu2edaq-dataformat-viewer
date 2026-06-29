@@ -104,6 +104,12 @@ def load(config_path: str | None = None, script_dir: str | None = None) -> dict:
     if not fd.is_absolute():
         cfg["formats_dir"] = str((config_dir / fd).resolve())
 
+    # Control-room port override: CRS_PORT_LISTEN (exported by crs-app from
+    # apps.yaml) takes precedence over the viewer listen port in the config.
+    crs_listen = os.environ.get("CRS_PORT_LISTEN")
+    if crs_listen:
+        cfg["viewer"]["port"] = int(crs_listen)
+
     return cfg
 
 
