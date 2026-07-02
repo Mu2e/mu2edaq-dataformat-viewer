@@ -15,6 +15,8 @@ to extend or change the way the data is displayed without needing to change the 
 
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys

@@ -85,7 +85,7 @@ mu2e_send(MU2E_PROTO_TCP, "localhost", 7755, data, len);
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.9+
 - [PyQt6](https://pypi.org/project/PyQt6/)
 - [PyYAML](https://pypi.org/project/PyYAML/)
 
