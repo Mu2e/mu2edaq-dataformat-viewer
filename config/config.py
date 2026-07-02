@@ -7,6 +7,8 @@ specified.  Relative paths inside the config file are resolved
 relative to the directory that contains the config file itself.
 """
 
+from __future__ import annotations
+
 import copy
 import os
 from pathlib import Path
