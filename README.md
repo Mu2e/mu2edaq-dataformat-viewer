@@ -90,6 +90,9 @@ mu2e_send(MU2E_PROTO_TCP, "localhost", 7755, data, len);
 - [PyYAML](https://pypi.org/project/PyYAML/)
 
 ```bash
+# mu2edaq-discovery is not on PyPI; install it from the sibling submodule
+# checkout first (this assumes the mu2edaq-main submodule layout).
+pip install -e ../mu2edaq-discovery
 pip install -r requirements.txt
 ```
 
@@ -100,6 +103,7 @@ pip install -r requirements.txt
 ```bash
 git clone <repo-url>
 cd mu2edaq-dataformat-viewer
+pip install -e ../mu2edaq-discovery   # sibling submodule; not on PyPI
 pip install -r requirements.txt
 
 # Launch the viewer
