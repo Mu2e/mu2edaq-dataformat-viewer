@@ -1,0 +1,83 @@
+.TH MU2EDAQ-DATAFORMAT-SENDER.PY 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq-dataformat-sender.py \- build a Mu2e ROC packet from YAML and send it
+.SH SYNOPSIS
+.B mu2edaq\-dataformat\-sender.py
+.RB [ \-\-config
+.IR FILE ]
+.RI [ formats_dir ]
+.SH DESCRIPTION
+A PyQt6 window that lists every field of the selected format with an entry
+box, or a drop-down for fields with a
+.B values
+table, assembles the packet live, and sends it.
+Fields with a
+.B fixed_value
+are pre-filled and locked.
+.PP
+The buffer is
+.B size_bytes
+long, or two bytes past the highest
+.B word
+when
+.B size_bytes
+is absent.
+A field whose word lies beyond the buffer is silently not written; in the
+shipped formats this affects the trailing CRC and trailer rows.
+Words are written big-endian unless
+.B Little-endian words
+is ticked.
+Fields in
+.BR fields ,
+.BR packet_1 ,
+.B packet_2
+and
+.B hit_format
+sections are used.
+.PP
+.B Send to viewer
+opens a TCP connection (5 s timeout), writes the bytes and closes, or sends
+one UDP datagram (IPv4 only), to the host and port in the toolbar.
+.SH OPTIONS
+.TP
+.BI \-\-config " FILE"
+Configuration file; see
+.BR mu2e\-viewer.yaml (5).
+Searched for in the current directory as for the viewer.
+.TP
+.I formats_dir
+Directory of format YAML files; overrides
+.BR formats_dir .
+.TP
+.BR \-h ", " \-\-help
+.SH FILES
+.TP
+.I formats/*.yaml
+.TP
+.I config/mu2e\-viewer.yaml
+.B sender.host
+and
+.B sender.port
+give the initial destination.
+.SH EXIT STATUS
+The Qt event loop's exit code, normally 0.
+1 if PyYAML or PyQt6 cannot be imported.
+.SH EXAMPLES
+.RS
+.nf
+cd ~/mu2edaq\-main/mu2edaq\-dataformat\-viewer
+\&./venv/bin/python mu2edaq\-dataformat\-sender.py
+.fi
+.RE
+.SH BUGS
+The heartbeat, data-request and debug-header definitions place several
+fields in different bits from Mu2e-doc-4914 and from artdaq-core-mu2e, so
+packets built from them are not what the DTC software expects; see
+.IR doc/ISSUES\-PENDING.md ,
+DFV-001.
+.SH SEE ALSO
+.BR mu2edaq\-dataformat\-viewer.py (1),
+.BR mu2e_send (1),
+.BR mu2edaq\-dataformat\-formats.yaml (5)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

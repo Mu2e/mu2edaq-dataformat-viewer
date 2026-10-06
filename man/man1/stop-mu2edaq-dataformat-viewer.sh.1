@@ -1,0 +1,36 @@
+.TH STOP-MU2EDAQ-DATAFORMAT-VIEWER.SH 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+stop-mu2edaq-dataformat-viewer.sh \- stop the data format viewer started by its start script
+.SH SYNOPSIS
+.B stop\-mu2edaq\-dataformat\-viewer.sh
+.RI [ PIDFILE ]
+.SH DESCRIPTION
+Standardised Mu2e control-room stop script, run by
+.BR "crs-app stop dataformat-viewer" .
+Reads the PID file; if it is absent, or names a dead process, reports that,
+removes a stale file and exits 0.
+Otherwise sends SIGTERM, waits up to
+.B CRS_STOP_TIMEOUT
+seconds, sends SIGKILL if needed, and removes the PID file.
+.SH OPTIONS
+.TP
+.I PIDFILE
+PID file, default
+.I dataformat\-viewer.pid
+next to the script.
+.SH ENVIRONMENT
+.TP
+.B CRS_STOP_TIMEOUT
+Seconds before SIGKILL; default 10.
+.SH EXIT STATUS
+0.
+.SH EXAMPLES
+.RS
+.nf
+\&./stop\-mu2edaq\-dataformat\-viewer.sh
+.fi
+.RE
+.SH SEE ALSO
+.BR start\-mu2edaq\-dataformat\-viewer.sh (1)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

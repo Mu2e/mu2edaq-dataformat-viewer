@@ -1,0 +1,57 @@
+.TH MU2E_SEND 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+mu2e_send \- send raw packet bytes to the data format viewer over TCP or UDP
+.SH SYNOPSIS
+.B mu2e_send
+.RB [ \-u | \-\-udp ]
+.I host port hex-byte
+.RI [ hex-byte ...]
+.br
+.B mu2e_send
+.RB [ \-u | \-\-udp ]
+.B \-f
+.I file host port
+.SH DESCRIPTION
+Sends the given bytes as one TCP connection (connect, send all, close) or one
+UDP datagram, using
+.BR libmu2e_sender (3).
+Bytes are taken from the arguments, each a hex value 0\(en0xFF with an
+optional
+.B 0x
+prefix, or from a binary file.
+Options must precede
+.I host
+and
+.IR port .
+.PP
+Built from
+.I cpp/
+with CMake; it is not built or installed by the Python bootstrap.
+.SH OPTIONS
+.TP
+.BR \-u ", " \-\-udp
+UDP instead of TCP.
+.TP
+.BR \-f ", " \-\-file " \fIFILE\fR"
+Read the payload from
+.IR FILE ;
+no hex arguments may follow.
+.TP
+.BR \-h ", " \-\-help
+.SH EXIT STATUS
+0 on success; 1 on a usage error, unreadable file, empty payload or send
+failure.
+A TCP peer that closes early can terminate the program with SIGPIPE.
+.SH EXAMPLES
+.RS
+.nf
+cmake \-S cpp \-B cpp/build \-DCMAKE_BUILD_TYPE=Release && cmake \-\-build cpp/build
+cpp/build/mu2e_send localhost 7755 00 10 80 10 cd ef 00 ab 00 00 00 01 a0 20 00 00
+cpp/build/mu2e_send \-\-udp \-f test/test.dat localhost 7755
+.fi
+.RE
+.SH SEE ALSO
+.BR libmu2e_sender (3),
+.BR mu2edaq\-dataformat\-viewer.py (1)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

@@ -1,0 +1,76 @@
+.TH LIBMU2E_SENDER 3 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+libmu2e_sender, mu2e_send, mu2e_send_tcp, mu2e_send_udp, mu2e_strerror \- send raw bytes over TCP or UDP
+.SH SYNOPSIS
+.nf
+.B #include \(dqmu2e_sender.h\(dq
+.PP
+.BI "int mu2e_send(mu2e_protocol_t " proto ", const char *" host ", int " port ,
+.BI "              const uint8_t *" data ", size_t " len );
+.BI "int mu2e_send_tcp(const char *" host ", int " port ", const uint8_t *" data ", size_t " len );
+.BI "int mu2e_send_udp(const char *" host ", int " port ", const uint8_t *" data ", size_t " len );
+.B const char *mu2e_strerror(void);
+.fi
+.PP
+Link with
+.BR \-lmu2e_sender .
+.SH DESCRIPTION
+A C-linkage library (implemented in C++17) built by
+.IR cpp/CMakeLists.txt
+as target
+.B mu2e_sender
+(static unless
+.B BUILD_SHARED_LIBS
+is set; SOVERSION 1).
+.PP
+.B mu2e_send()
+resolves
+.I host
+with
+.BR getaddrinfo (3)
+(IPv4 or IPv6).
+For
+.B MU2E_PROTO_TCP
+it connects to the first address that accepts, sends all
+.I len
+bytes (looping on partial writes) and closes.
+For
+.B MU2E_PROTO_UDP
+it sends one datagram to the first address.
+A new socket is used per call.
+.B mu2e_send_tcp()
+and
+.B mu2e_send_udp()
+are wrappers.
+.PP
+.B mu2e_strerror()
+returns a thread-local message describing the last failure.
+.SH RETURN VALUE
+0 on success, \-1 on failure.
+.SH ERRORS
+On a
+.B getaddrinfo
+failure the message is set but
+.I errno
+is not.
+.B send
+uses no
+.BR MSG_NOSIGNAL ,
+so a peer that has closed the connection raises SIGPIPE in the caller.
+The library uses POSIX sockets only and does not build on Windows.
+.SH EXAMPLES
+.nf
+#include "mu2e_sender.h"
+uint8_t pkt[16] = {0x00,0x10,0x80,0x10};
+if (mu2e_send_tcp("localhost", 7755, pkt, sizeof pkt) != 0)
+    fprintf(stderr, "%s\en", mu2e_strerror());
+.fi
+.SH FILES
+.TP
+.I cpp/include/mu2e_sender.h
+.TP
+.I cpp/src/mu2e_sender.cpp
+.SH SEE ALSO
+.BR mu2e_send (1)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

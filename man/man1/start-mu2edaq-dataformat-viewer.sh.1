@@ -1,0 +1,74 @@
+.TH START-MU2EDAQ-DATAFORMAT-VIEWER.SH 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+start-mu2edaq-dataformat-viewer.sh \- control-room launcher for the data format viewer
+.SH SYNOPSIS
+.B start\-mu2edaq\-dataformat\-viewer.sh
+.RI [ viewer-argument ...]
+.SH DESCRIPTION
+Standardised Mu2e control-room start script, run by
+.B crs-app start dataformat-viewer
+(entry
+.B dataformat\-viewer
+in
+.IR mu2edaq\-controlroom\-setup/config/apps.yaml ,
+.BR "ports: {listen: 7755}" ,
+session
+.BR daq\-aux ).
+It changes to its own directory, exports
+.B CRS_PORT_LISTEN
+(default 7755) and
+.B DISPLAY
+(default
+.BR :0 ),
+picks
+.I ./venv/bin/python
+if executable or
+.B python3
+otherwise, and starts
+.BR mu2edaq\-dataformat\-viewer.py (1)
+in the background with
+.BR nohup ,
+appending output to
+.IR dataformat\-viewer.log .
+After one second it checks that the process is alive and writes its PID to
+.IR dataformat\-viewer.pid .
+If that file names a live process it reports it and exits 0.
+.PP
+The viewer does not start listening by itself; the operator presses
+.B Start listening
+in the window.
+.SH OPTIONS
+Arguments are passed to the viewer
+.RB ( \-\-config
+.IR FILE ,
+.IR formats_dir ).
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_LISTEN
+Listen port shown in the window and announced by discovery; overrides
+.BR viewer.port .
+.TP
+.B DISPLAY
+X display; default
+.BR :0 .
+.SH FILES
+.TP
+.I dataformat\-viewer.pid
+.TP
+.I dataformat\-viewer.log
+Not rotated.
+.SH EXIT STATUS
+0 when started or already running; 1 if the process died within one second.
+.SH EXAMPLES
+.RS
+.nf
+\&./start\-mu2edaq\-dataformat\-viewer.sh
+CRS_PORT_LISTEN=7756 ./start\-mu2edaq\-dataformat\-viewer.sh \-\-config config/mu2e\-viewer.yaml
+.fi
+.RE
+.SH SEE ALSO
+.BR stop\-mu2edaq\-dataformat\-viewer.sh (1),
+.BR mu2edaq\-dataformat\-viewer.py (1),
+.BR bootstrap.sh (1)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

@@ -1,0 +1,113 @@
+.TH MU2E-VIEWER.YAML 5 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+mu2e-viewer.yaml \- configuration of the data format viewer and sender
+.SH SYNOPSIS
+.I config/mu2e\-viewer.yaml
+.SH DESCRIPTION
+Read by
+.BR mu2edaq\-dataformat\-viewer.py (1)
+and
+.BR mu2edaq\-dataformat\-sender.py (1)
+through
+.IR config/config.py .
+Values are deep-merged over built-in defaults, so every key is optional.
+.PP
+Without
+.BR \-\-config ,
+the first existing file among
+.IR ./mu2e\-viewer.yaml ,
+.IR ./config.yaml ,
+.IR ./config/mu2e\-viewer.yaml ,
+.I ./config/config.yaml
+is used, relative to the
+.B current working directory
+(not the script directory, despite the
+.B \-\-help
+text).
+The start script changes to the checkout first, so it finds
+.IR config/mu2e\-viewer.yaml .
+Run from elsewhere with no file found, the built-in
+.B formats_dir
+of
+.B .\&
+resolves to the checkout root, which holds no format files, and the format
+list is empty.
+.PP
+Precedence: command-line
+.I formats_dir
+over
+.B CRS_PORT_LISTEN
+(for
+.B viewer.port
+only) over this file over the built-in defaults.
+.PP
+.B File \(-> Save config
+in either program writes the current UI state in this format.
+.SH KEYS
+.TP
+.B formats_dir
+Directory of packet-format YAML files, relative to the configuration file.
+Shipped:
+.BR ../formats .
+Built-in default:
+.BR .\& .
+.TP
+.B default_format
+Format
+.B name
+selected at start; empty selects the first alphabetically.
+.TP
+.B viewer.port
+Listen port, default 7755.
+Overridden by
+.BR CRS_PORT_LISTEN .
+Also the port announced by discovery.
+.TP
+.B viewer.protocol
+.B TCP
+(default) or
+.BR UDP .
+Not in the shipped file; written by
+.BR "Save config" .
+.TP
+.BR sender.host ", " sender.port
+Initial destination for the sender; defaults
+.B localhost
+and 7755.
+.TP
+.B sender.protocol
+.B TCP
+or
+.BR UDP .
+.TP
+.B font_size
+Points, 7\(en24; default 11.
+.TP
+.B qt_style
+Qt style name, default
+.BR Fusion .
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_LISTEN
+Replaces
+.B viewer.port
+when set.
+.SH EXAMPLES
+.nf
+formats_dir: "../formats"
+default_format: "Data Header Packet"
+viewer:
+  port: 7755
+  protocol: UDP
+sender:
+  host: mu2e\-daq\-01
+  port: 7755
+font_size: 12
+qt_style: Fusion
+.fi
+.SH SEE ALSO
+.BR mu2edaq\-dataformat\-viewer.py (1),
+.BR mu2edaq\-dataformat\-sender.py (1),
+.BR mu2edaq\-dataformat\-formats.yaml (5)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

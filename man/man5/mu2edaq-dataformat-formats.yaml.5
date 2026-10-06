@@ -1,0 +1,141 @@
+.TH MU2EDAQ-DATAFORMAT-FORMATS.YAML 5 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq-dataformat-formats.yaml \- packet layout definitions in formats/*.yaml
+.SH SYNOPSIS
+.I formats/<packet>.yaml
+.br
+.I formats/packet_type_index.yaml
+.SH DESCRIPTION
+Each file describes one Mu2e ROC packet layout, transcribed by hand from
+Mu2e-doc-4914 (the copy shipped as
+.IR doc/mu2e\-dataformat.pdf ,
+V53, 21 Feb 2026).
+Both GUIs load every
+.I *.yaml
+in
+.B formats_dir
+with
+.BR yaml.safe_load ,
+skip
+.IR packet_type_index.yaml ,
+and key each format by its
+.BR name .
+A file that fails to parse is reported on stdout and skipped.
+There is no schema validation and no comparison with the C++ overlays in
+artdaq-core-mu2e, which encode the same layouts independently.
+.SS Top-level keys
+.TP
+.B name
+Display name and lookup key; must be unique.
+The viewer's auto-detect table expects the names
+.BR "DCS Request Packet" ,
+.BR "Heartbeat Packet" ,
+.BR "Data Request Packet" ,
+.BR "Prefetch Request Packet" ,
+.BR "DCS Reply Packet" ,
+.BR "Data Header Packet" ,
+.BR "Data Payload Packet" ,
+.B "DCS Request Additional Block Write Payload Packet"
+and
+.BR "DCS Reply Additional Block Read Payload Packet" .
+.TP
+.B packet_type
+4-bit type code (informational; the GUIs do not read it).
+.TP
+.B size_bytes
+Buffer size used by the sender.
+Fields beyond it are not written.
+.TP
+.B fields
+List of field definitions (below).
+.TP
+.BR packet_1 ", " packet_2
+Sub-sections, each with
+.B description
+and
+.BR fields ,
+decoded one after the other from the same offset (tracker).
+.TP
+.B hit_format
+Sub-section with
+.BR fields ;
+used by the sender only.
+.TP
+.BR description ", " notes ", " serial_header ", " dma_channel ", " subsystem_id ", " subsystem_name ", ..."
+Documentation only.
+Other structures
+.RB ( hit_header ,
+.BR waveform_samples ,
+.BR formats ,
+\&...) are not interpreted; the calorimeter hit, calorimeter hit debugging
+and CRV hit formats therefore show an empty table in the viewer.
+.SS Field keys
+.TP
+.B name
+Shown in the table.
+A name containing
+.B reserved
+(any case) is greyed.
+.TP
+.B word
+16-bit word index from the decode offset (byte offset = 2 \(mu word).
+.TP
+.B bits
+.B \(dqH:L\(dq
+or
+.BR \(dqN\(dq ,
+bit positions within the word, 15 = most significant.
+The width is computed from this; quote it so YAML keeps it a string.
+.TP
+.B size_bits
+Width; used by the sender for formatting only.
+Must equal H\-L+1 (true for all 229 shipped top-level fields).
+.TP
+.B fixed_value
+Expected value; the viewer colours the row green or red, the sender
+pre-fills and locks it.
+.TP
+.B values
+Map from value (int or hex string) to label.
+.TP
+.B subfields
+List of
+.BR name ,
+.BR bits ,
+.BR description ,
+.BR values ;
+bit numbers are absolute word positions.
+Displayed as text only, not decoded.
+.TP
+.BR description ", " notes
+Free text.
+.SH EXAMPLES
+.nf
+name: Example Packet
+packet_type: 0x5
+size_bytes: 16
+fields:
+  \- name: Byte Count
+    word: 0
+    bits: "15:0"
+    size_bits: 16
+    description: Transfer byte count.
+  \- name: Packet Type
+    word: 1
+    bits: "7:4"
+    size_bits: 4
+    fixed_value: 0x5
+    description: Always 5.
+.fi
+.SH BUGS
+The heartbeat, data-request and debug-header files disagree with the
+specification and with artdaq-core-mu2e; see
+.IR doc/INTERFACES.md
+and DFV-001 in
+.IR doc/ISSUES\-PENDING.md .
+.SH SEE ALSO
+.BR mu2edaq\-dataformat\-viewer.py (1),
+.BR mu2edaq\-dataformat\-sender.py (1),
+.BR mu2e\-viewer.yaml (5)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

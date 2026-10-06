@@ -1,0 +1,142 @@
+.TH MU2EDAQ-DATAFORMAT-VIEWER.PY 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+mu2edaq-dataformat-viewer.py \- decode Mu2e ROC packets from YAML definitions
+.SH SYNOPSIS
+.B mu2edaq\-dataformat\-viewer.py
+.RB [ \-\-config
+.IR FILE ]
+.RI [ formats_dir ]
+.SH DESCRIPTION
+A PyQt6 window that shows raw packet bytes as a field-by-field table
+(name, word, bits, hex, binary, decimal, decoded value) using the packet
+definitions in
+.IR formats/*.yaml
+(see
+.BR mu2edaq\-dataformat\-formats.yaml (5)).
+Bytes come from typed hex, a binary file
+.RB ( "Load file" ),
+or the network.
+.PP
+Each field is read from 16-bit word
+.B word
+of the data, starting at the byte offset in the
+.B Offset
+box, and bits
+.BR bits .
+Words are assembled
+.B big-endian
+(first byte high) unless
+.B Little-endian words
+is ticked.
+The DTC software in artdaq-core-mu2e reads the same buffers little-endian
+(byte 0 is the low byte of word 0), so tick the box for DTC DMA dumps and
+artdaq fragments.
+A field whose word lies beyond the data is omitted from the table without
+any warning.
+Fields with a
+.B fixed_value
+are shown green when they match and red when they do not.
+.B Auto-detect type
+reads the packet type from bits 7:4 of word 1 and selects the matching
+format from a built-in table (types 0x0\(en0x8); data payload packets carry
+no type field, so detection is meaningless for them.
+.PP
+.B Network input.
+.B Start listening
+binds the
+.B Port
+on
+.B 0.0.0.0
+(all interfaces), TCP or UDP as selected.
+For TCP each connection is read until the peer closes it and the whole byte
+stream is shown as one packet; there is no size or time limit and no peer
+filtering.
+For UDP each datagram (up to 65536 bytes) is one packet.
+Every received packet replaces the display and triggers auto-detect.
+The listener is not started automatically.
+.PP
+.B Discovery.
+If
+.B mu2edaq_discovery
+is importable, a responder announcing app
+.BR dataformat\-viewer ,
+scheme
+.BR tcp ,
+and the configured port is started at launch, before and regardless of
+listening.
+.PP
+.B Known defect:
+with
+.B Word size
+set to 2 or 4 bytes the hex panel is rewritten as multi-byte tokens that the
+parser rejects, and the table stays empty with
+.BR "Parse error" .
+Keep word size at 1 byte.
+.SH OPTIONS
+.TP
+.BI \-\-config " FILE"
+Configuration file; see
+.BR mu2e\-viewer.yaml (5).
+Without it the first of
+.IR ./mu2e\-viewer.yaml ,
+.IR ./config.yaml ,
+.IR ./config/mu2e\-viewer.yaml ,
+.I ./config/config.yaml
+relative to the
+.B current directory
+is used.
+A named file that does not exist is fatal.
+.TP
+.I formats_dir
+Directory of format YAML files; overrides
+.BR formats_dir .
+.TP
+.BR \-h ", " \-\-help
+.SH ENVIRONMENT
+.TP
+.B CRS_PORT_LISTEN
+Overrides
+.B viewer.port
+(set by the control-room launcher).
+.TP
+.B DISPLAY
+X11 display.
+.SH FILES
+.TP
+.I config/mu2e\-viewer.yaml
+Shipped configuration
+.RB ( formats_dir: ../formats ).
+.TP
+.I formats/*.yaml
+Packet definitions;
+.I packet_type_index.yaml
+is skipped.
+.TP
+.I test/test.dat
+20-byte big-endian sample heartbeat.
+.SH EXIT STATUS
+The Qt event loop's exit code, normally 0.
+1 if PyYAML or PyQt6 cannot be imported.
+.SH EXAMPLES
+.RS
+.nf
+cd ~/mu2edaq\-main/mu2edaq\-dataformat\-viewer
+\&./venv/bin/python mu2edaq\-dataformat\-viewer.py
+\&./venv/bin/python mu2edaq\-dataformat\-viewer.py \-\-config config/mu2e\-viewer.yaml
+mu2e_send \-f test/test.dat localhost 7755      # after Start listening
+.fi
+.RE
+.PP
+Run it from the checkout directory, or pass
+.B \-\-config
+or
+.IR formats_dir ;
+from any other directory no formats are found.
+.SH SEE ALSO
+.BR mu2edaq\-dataformat\-sender.py (1),
+.BR mu2e_send (1),
+.BR start\-mu2edaq\-dataformat\-viewer.sh (1),
+.BR mu2e\-viewer.yaml (5),
+.BR mu2edaq\-dataformat\-formats.yaml (5)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.

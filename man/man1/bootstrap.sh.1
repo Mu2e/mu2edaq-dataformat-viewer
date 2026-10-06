@@ -1,0 +1,48 @@
+.TH BOOTSTRAP.SH 1 "2026-10-06" "mu2edaq-dataformat-viewer t01.00.00" "Mu2e DAQ Manual"
+.SH NAME
+bootstrap.sh \- create the data format viewer's Python virtual environment
+.SH SYNOPSIS
+.B ./bootstrap.sh
+.RB [ \-\-dev ]
+.SH DESCRIPTION
+Checks that
+.B $PYTHON
+(default
+.BR python3 )
+is 3.9 or newer, creates
+.I venv/
+next to the script if absent, upgrades pip, installs
+.B mu2edaq\-discovery
+if it is not importable (editable from
+.I ../mu2edaq\-discovery
+when that directory exists, otherwise from GitHub, best effort), then
+installs
+.I requirements.txt
+(PyYAML, PyQt6).
+.SH OPTIONS
+.TP
+.B \-\-dev
+Also install pytest.
+The package has no tests.
+.TP
+.BR \-h ", " \-\-help
+Print the script's header comment.
+.SH ENVIRONMENT
+.TP
+.B PYTHON
+Interpreter used to create the venv.
+.SH EXIT STATUS
+0 on success; 1 if Python is missing or too old; 2 on an unknown option;
+otherwise the failing command's status
+.RB ( "set \-euo pipefail" ).
+.SH EXAMPLES
+.RS
+.nf
+\&./bootstrap.sh
+PYTHON=/usr/bin/python3.9 ./bootstrap.sh
+.fi
+.RE
+.SH SEE ALSO
+.BR start\-mu2edaq\-dataformat\-viewer.sh (1)
+.SH AUTHOR
+Mu2e DAQ group, Fermilab.
