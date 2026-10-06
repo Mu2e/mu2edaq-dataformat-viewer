@@ -1,0 +1,177 @@
+schema: mega-review/1
+package: mu2edaq-dataformat-viewer
+tier: A
+group: operations
+repo:
+  url: git@github.com:Mu2e/mu2edaq-dataformat-viewer.git
+  exists: true
+  issues_enabled: true
+doc_dir: doc
+summary: >
+  PyQt6 viewer and sender that decode and construct Mu2e ROC packets field by
+  field from hand-written YAML layouts of Mu2e-doc-4914, with a TCP/UDP
+  listener on 7755 and a small C sender library and CLI
+languages: [python, cpp, bash]
+loc: 2628
+
+runtime:
+  executables:
+    - name: mu2edaq-dataformat-viewer.py
+      kind: gui
+      man_page: man/man1/mu2edaq-dataformat-viewer.py.1
+    - name: mu2edaq-dataformat-sender.py
+      kind: gui
+      man_page: man/man1/mu2edaq-dataformat-sender.py.1
+    - name: start-mu2edaq-dataformat-viewer.sh
+      kind: script
+      man_page: man/man1/start-mu2edaq-dataformat-viewer.sh.1
+    - name: stop-mu2edaq-dataformat-viewer.sh
+      kind: script
+      man_page: man/man1/stop-mu2edaq-dataformat-viewer.sh.1
+    - name: bootstrap.sh
+      kind: script
+      man_page: man/man1/bootstrap.sh.1
+    - name: mu2e_send
+      kind: cli
+      man_page: man/man1/mu2e_send.1
+    - name: libmu2e_sender
+      kind: library
+      man_page: man/man3/libmu2e_sender.3
+  services: []
+  ports:
+    - {port: 7755, proto: tcp, role: packet-listener-operator-started, source: "config/mu2e-viewer.yaml:15"}
+    - {port: 7755, proto: udp, role: packet-listener-operator-started, source: "mu2edaq-dataformat-viewer.py:986"}
+    - {port: 28999, proto: udp, role: discovery-responder, source: "mu2edaq-dataformat-viewer.py:1090"}
+  config_files: [config/mu2e-viewer.yaml, "formats/*.yaml"]
+  env_vars: [CRS_PORT_LISTEN, CRS_STOP_TIMEOUT, DISPLAY, PYTHON]
+
+interactions:
+  depends_on:
+    - package: mu2edaq-discovery
+      via: import
+      direction: out
+      evidence: "mu2edaq-dataformat-viewer.py:1089"
+  depended_on_by: []
+  external: [pypi, github.com]
+
+quality:
+  tests: {present: false, framework: none, count: 0}
+  ci: {present: false, workflows: []}
+  license: MIT
+  artifacts_clean: true
+
+findings:
+  - id: DFV-001
+    severity: S2
+    type: bug
+    title: "[formats] heartbeat, data-request and debug-header YAML layouts disagree with Mu2e-doc-4914 V53 and with artdaq-core-mu2e; nothing checks consistency"
+    issue: pending
+    fingerprint: 8ab8722f
+  - id: DFV-002
+    severity: S3
+    type: bug
+    title: "[formats] YAML value tables drift from the overlay enums, three formats cannot be displayed, and nothing validates the YAML"
+    issue: pending
+    fingerprint: cb12ee48
+  - id: DFV-003
+    severity: S3
+    type: bug
+    title: "[viewer] default big-endian word order is the opposite of the DTC byte order, and auto-detect misreads payload and little-endian packets"
+    issue: pending
+    fingerprint: 2d48a561
+  - id: DFV-004
+    severity: S3
+    type: bug
+    title: "[viewer] the listener accepts unbounded input from any host and truncated packets decode silently"
+    issue: pending
+    fingerprint: 834a9779
+  - id: DFV-005
+    severity: S3
+    type: bug
+    title: "[viewer] word size 2 or 4 bytes makes every decode fail with \"Parse error\""
+    issue: pending
+    fingerprint: 76f66c90
+  - id: DFV-006
+    severity: S3
+    type: bug
+    title: "[discovery] the viewer announces its port at launch, before anything listens"
+    issue: pending
+    fingerprint: "020cbe29"
+  - id: DFV-007
+    severity: S3
+    type: enhancement
+    title: "[tests] test/ holds sample data but no tests, and there is no CI"
+    issue: pending
+    fingerprint: 5297c4b1
+  - id: DFV-008
+    severity: S4
+    type: bug
+    title: "[config] config search is relative to the current directory; launched elsewhere the viewer loads no formats"
+    issue: pending
+    fingerprint: e5ffd8f8
+  - id: DFV-009
+    severity: S4
+    type: bug
+    title: "[cpp] libmu2e_sender is POSIX-only and lets SIGPIPE kill the caller"
+    issue: pending
+    fingerprint: 35d6bcf7
+  - id: DFV-010
+    severity: S4
+    type: documentation
+    title: "[docs] README format count, sample path and the \"standard big-endian\" claim are wrong"
+    issue: pending
+    fingerprint: "004a7282"
+
+notes:
+  yaml_vs_overlay: >
+    Compared field by field (name, word, bits/width) against
+    artdaq-core-mu2e cf86c07 headers plus the pack/unpack functions they name,
+    and against the shipped spec doc/mu2e-dataformat.pdf (Mu2e-doc-4914 V53).
+    Data Header: all 8 words agree among YAML, spec and RocDataHeaderPacket_t;
+    subsystem-ID values differ (YAML/spec 7=TDAQ, 3/6 reserved; overlay
+    3=Other, 6=MobileSync, 7=Unused). Heartbeat: YAML disagrees with spec and
+    overlay (which agree): on-spill flag YAML word 5 bit 0 vs word 7 bit 0
+    (mode4&1, byte 14); TEM/STM in word 6 vs word 7; YAML invents "Event Mode
+    Byte 5" at word 7 [15:8] where spec/overlay have the Delivery Ring TDC
+    (byte 15); YAML moves TDC to word 8 and CRC to word 9. Data Request:
+    Debug Type YAML word 6 [15:12] vs spec/overlay [7:4] (byte 12 = type<<4 |
+    debug); debug packet count 11 vs 16 bits; overlay adds debug types 3/4.
+    Debug Header (spec only, no overlay class): YAML Op Code at word 1 [7:3]
+    overlaps ROC Link ID and displaces Debug Type. Verdict S2 (DFV-001).
+  artdaq_core_mu2e_relation: >
+    No code dependency, so not in depends_on. The two packages encode the same
+    wire contract by hand with no shared source or test. Evidence pairs:
+    formats/heartbeat_packet.yaml:138 vs
+    artdaq-core-mu2e/Overlays/DTC_Types/DTC_EventMode.h:26.
+  cross_package_observation: >
+    artdaq-core-mu2e DTC_DMAPacket::ConvertToDataPacket writes subsystemID to
+    word 1 bits 14:12 (DTC_DMAPacket.cpp:21) but the DTC_DataPacket
+    constructor reads it from word 2 bits 15:13 (:43), which is where the spec
+    and RocDataHeaderPacket_t put it. Not filed here; for the artdaq-core-mu2e
+    reviewer.
+  bounds_checks: >
+    get_word returns None past the end and parse_fields skips the field
+    (mu2edaq-dataformat-viewer.py:82-88, :115-116); no out-of-range read is
+    possible. Gaps: unbounded TCP read to EOF with a thread per connection,
+    0.0.0.0 bind with no peer filter, and no marker for skipped fields
+    (DFV-004).
+  discovery_meta: >
+    Responder constructed without meta (mu2edaq-dataformat-viewer.py:1090-1091);
+    CONTRACT 9.5 string-only rule holds. It announces before the listener
+    exists (DFV-006).
+  test_dir: >
+    test/ is not empty: it holds test.dat (20-byte big-endian heartbeat) and
+    test2.dat (2048 bytes). There is no test code (DFV-007).
+  cpp_build: >
+    cmake -S cpp -B <scratch> && cmake --build: clean, no warnings, on macOS
+    2026-10-06; produces static libmu2e_sender.a and mu2e_send.
+  readme: >
+    Existing README.md is project-specific, not boilerplate; left unchanged
+    (its errors are DFV-010). No INSTALL.md: README already gives the CMake
+    and pip steps. No OPERATIONS.md: GUI, no daemon.
+  loc: >
+    2628 = Python 2046 (viewer 1101, sender 786, config 158+1) + C/C++ 393 +
+    CMake 47 + shell 142. Excludes 3265 lines of formats/*.yaml, Markdown and
+    the PDF.
+  man_layout: >
+    New pages in man/manN/; no git mv; no stale path references.
